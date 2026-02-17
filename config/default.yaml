@@ -1,0 +1,23 @@
+# NeuroWeave default configuration
+# Override any value with environment variables: NEUROWEAVE_<KEY>
+# e.g. NEUROWEAVE_LLM_PROVIDER=mock
+
+# LLM
+llm_provider: "anthropic"
+llm_model: "claude-haiku-4-5-20251001"
+# llm_api_key: set via NEUROWEAVE_LLM_API_KEY or ANTHROPIC_API_KEY
+
+# Extraction
+extraction_enabled: true
+extraction_confidence_threshold: 0.3
+
+# Graph
+graph_backend: "memory"
+
+# Server (visualization UI)
+server_host: "127.0.0.1"
+server_port: 8787
+
+# Logging
+log_level: "INFO"
+log_format: "console"   # console | json
