@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroWeave — Knowledge Graph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: #161822;
+            border-bottom: 1px solid #2a2d3a;
+        }
+
+        header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f0f0f0;
+        }
+
+        header h1 span {
+            color: #6c63ff;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .stats .value {
+            color: #6c63ff;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: #444;
+        }
+
+        .status-dot.connected { background: #4ade80; }
+        .status-dot.disconnected { background: #f87171; }
+
+        #cy {
+            flex: 1;
+            background: #0f1117;
+        }
+
+        .legend {
+            display: flex;
+            gap: 16px;
+            padding: 10px 20px;
+            background: #161822;
+            border-top: 1px solid #2a2d3a;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #555;
+        }
+
+        .empty-state h2 {
+            font-size: 20px;
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 60px;
+            right: 20px;
+            background: #1e2030;
+            border: 1px solid #2a2d3a;
+            border-left: 3px solid #6c63ff;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #ccc;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .toast.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1><span>Neuro</span>Weave — Knowledge Graph</h1>
+        <div class="stats">
+            <div><span class="status-dot disconnected" id="ws-dot"></span><span id="ws-status">Connecting…</span></div>
+            <div>Nodes: <span class="value" id="node-count">0</span></div>
+            <div>Edges: <span class="value" id="edge-count">0</span></div>
+            <div>Last update: <span class="value" id="last-update">—</span></div>
+        </div>
+    </header>
+
+    <div id="cy">
+        <div class="empty-state" id="empty-state">
+            <h2>Waiting for data…</h2>
+            <p>Start a conversation in the terminal to build the knowledge graph.</p>
+        </div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:#6c63ff"></div> Entity</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#4ade80"></div> Concept</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#fbbf24"></div> Preference</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#f472b6"></div> Episode</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#38bdf8"></div> Experience</div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // -- Color mapping by node type --
+    const NODE_COLORS = {
+        entity:     '#6c63ff',
+        concept:    '#4ade80',
+        preference: '#fbbf24',
+        episode:    '#f472b6',
+        experience: '#38bdf8',
+    };
+
+    // -- Cytoscape setup --
+    const cy = cytoscape({
+        container: document.getElementById('cy'),
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'label': 'data(label)',
+                    'background-color': 'data(color)',
+                    'color': '#e0e0e0',
+                    'font-size': '12px',
+                    'text-valign': 'bottom',
+                    'text-margin-y': 6,
+                    'width': 'data(size)',
+                    'height': 'data(size)',
+                    'border-width': 2,
+                    'border-color': 'data(color)',
+                    'border-opacity': 0.4,
+                    'text-outline-width': 2,
+                    'text-outline-color': '#0f1117',
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'label': 'data(label)',
+                    'width': 'data(width)',
+                    'line-color': '#3a3d4d',
+                    'target-arrow-color': '#3a3d4d',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'font-size': '10px',
+                    'color': '#777',
+                    'text-rotation': 'autorotate',
+                    'text-outline-width': 2,
+                    'text-outline-color': '#0f1117',
+                    'arrow-scale': 0.8,
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#fff',
+                }
+            }
+        ],
+        layout: { name: 'cose', animate: false },
+        minZoom: 0.3,
+        maxZoom: 3,
+    });
+
+    // -- State --
+    const knownNodes = new Set();
+    const knownEdges = new Set();
+
+    // -- UI helpers --
+    function updateStats(stats) {
+        document.getElementById('node-count').textContent = stats.node_count ?? cy.nodes().length;
+        document.getElementById('edge-count').textContent = stats.edge_count ?? cy.edges().length;
+        document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+    }
+
+    function showToast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('visible');
+        setTimeout(() => el.classList.remove('visible'), 2500);
+    }
+
+    function hideEmptyState() {
+        const el = document.getElementById('empty-state');
+        if (el) el.style.display = 'none';
+    }
+
+    function nodeSize(nodeType) {
+        return nodeType === 'entity' ? 35 : 28;
+    }
+
+    function edgeWidth(confidence) {
+        return 1 + confidence * 3;
+    }
+
+    // -- Graph manipulation --
+    function addNode(data) {
+        if (knownNodes.has(data.id)) return;
+        knownNodes.add(data.id);
+        hideEmptyState();
+        cy.add({
+            group: 'nodes',
+            data: {
+                id: data.id,
+                label: data.name,
+                color: NODE_COLORS[data.node_type] || '#6c63ff',
+                size: nodeSize(data.node_type),
+            }
+        });
+    }
+
+    function addEdge(data) {
+        if (knownEdges.has(data.id)) return;
+        knownEdges.add(data.id);
+        cy.add({
+            group: 'edges',
+            data: {
+                id: data.id,
+                source: data.source_id,
+                target: data.target_id,
+                label: `${data.relation} (${data.confidence.toFixed(2)})`,
+                width: edgeWidth(data.confidence),
+            }
+        });
+    }
+
+    function loadSnapshot(graphData) {
+        cy.elements().remove();
+        knownNodes.clear();
+        knownEdges.clear();
+
+        (graphData.nodes || []).forEach(addNode);
+        (graphData.edges || []).forEach(addEdge);
+
+        if (cy.nodes().length > 0) {
+            hideEmptyState();
+            runLayout();
+        }
+
+        updateStats(graphData.stats || {});
+    }
+
+    function runLayout() {
+        cy.layout({
+            name: 'cose',
+            animate: true,
+            animationDuration: 500,
+            nodeRepulsion: function() { return 8000; },
+            idealEdgeLength: function() { return 120; },
+            gravity: 0.3,
+            padding: 40,
+        }).run();
+    }
+
+    // -- WebSocket connection --
+    let ws = null;
+    let reconnectTimer = null;
+
+    function connect() {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${location.host}/ws/graph`);
+
+        ws.onopen = () => {
+            document.getElementById('ws-dot').className = 'status-dot connected';
+            document.getElementById('ws-status').textContent = 'Connected';
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === 'snapshot') {
+                loadSnapshot(msg.data);
+                return;
+            }
+
+            if (msg.type === 'node_added' || msg.type === 'node_updated') {
+                addNode(msg.data);
+                showToast(`+ ${msg.data.name}`);
+                runLayout();
+            }
+
+            if (msg.type === 'edge_added' || msg.type === 'edge_updated') {
+                addEdge(msg.data);
+                runLayout();
+            }
+
+            if (msg.stats) updateStats(msg.stats);
+        };
+
+        ws.onclose = () => {
+            document.getElementById('ws-dot').className = 'status-dot disconnected';
+            document.getElementById('ws-status').textContent = 'Disconnected';
+            reconnectTimer = setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => ws.close();
+    }
+
+    // -- Initial load: fetch graph via REST in case server already has data --
+    fetch('/api/graph')
+        .then(r => r.json())
+        .then(data => {
+            if (data.nodes && data.nodes.length > 0) {
+                loadSnapshot(data);
+            }
+        })
+        .catch(() => {});
+
+    connect();
+    </script>
+</body>
+</html>
