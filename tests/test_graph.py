@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import queue
 
 import pytest
 
@@ -230,41 +230,41 @@ class TestEventEmission:
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="a"))
 
     def test_node_added_event(self, store: GraphStore):
-        queue: asyncio.Queue[GraphEvent] = asyncio.Queue()
-        store.set_event_queue(queue)
+        q: queue.Queue[GraphEvent] = queue.Queue()
+        store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
 
-        assert not queue.empty()
-        event = queue.get_nowait()
+        assert not q.empty()
+        event = q.get_nowait()
         assert event.event_type == GraphEventType.NODE_ADDED
         assert event.data["name"] == "Alex"
 
     def test_node_updated_event(self, store: GraphStore):
-        queue: asyncio.Queue[GraphEvent] = asyncio.Queue()
-        store.set_event_queue(queue)
+        q: queue.Queue[GraphEvent] = queue.Queue()
+        store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
         store.add_node(make_node("Alex Updated", NodeType.ENTITY, node_id="alex"))
 
         events = []
-        while not queue.empty():
-            events.append(queue.get_nowait())
+        while not q.empty():
+            events.append(q.get_nowait())
 
         assert events[0].event_type == GraphEventType.NODE_ADDED
         assert events[1].event_type == GraphEventType.NODE_UPDATED
 
     def test_edge_added_event(self, store: GraphStore):
-        queue: asyncio.Queue[GraphEvent] = asyncio.Queue()
-        store.set_event_queue(queue)
+        q: queue.Queue[GraphEvent] = queue.Queue()
+        store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
         store.add_node(make_node("Lena", NodeType.ENTITY, node_id="lena"))
         store.add_edge(make_edge("alex", "lena", "married_to", 0.95, edge_id="e1"))
 
         events = []
-        while not queue.empty():
-            events.append(queue.get_nowait())
+        while not q.empty():
+            events.append(q.get_nowait())
 
         edge_events = [e for e in events if e.event_type == GraphEventType.EDGE_ADDED]
         assert len(edge_events) == 1

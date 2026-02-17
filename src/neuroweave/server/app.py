@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -32,7 +33,8 @@ class WebSocketManager:
         log.info("ws.client_connected", total=len(self._connections))
 
     def disconnect(self, ws: WebSocket) -> None:
-        self._connections.remove(ws)
+        if ws in self._connections:
+            self._connections.remove(ws)
         log.info("ws.client_disconnected", total=len(self._connections))
 
     async def broadcast(self, data: dict[str, Any]) -> None:
@@ -45,7 +47,8 @@ class WebSocketManager:
             except Exception:
                 dead.append(ws)
         for ws in dead:
-            self._connections.remove(ws)
+            if ws in self._connections:
+                self._connections.remove(ws)
 
     @property
     def connection_count(self) -> int:
@@ -53,25 +56,33 @@ class WebSocketManager:
 
 
 # ---------------------------------------------------------------------------
-# Event broadcaster — reads from GraphStore event queue, pushes to WebSockets
+# Event broadcaster — polls thread-safe queue, pushes to WebSockets
 # ---------------------------------------------------------------------------
 
 async def _event_broadcaster(
-    queue: asyncio.Queue[GraphEvent],
+    event_queue: queue.Queue[GraphEvent],
     ws_manager: WebSocketManager,
     store: GraphStore,
 ) -> None:
-    """Background task: consume graph events and broadcast to WebSocket clients."""
+    """Background task: poll graph events from thread-safe queue and broadcast.
+
+    Uses a short sleep to yield control — the queue.Queue is filled by the
+    main thread (conversation loop), this task runs in the server's asyncio
+    event loop.
+    """
     while True:
-        event = await queue.get()
-        await ws_manager.broadcast({
-            "type": event.event_type.value,
-            "data": event.data,
-            "stats": {
-                "node_count": store.node_count,
-                "edge_count": store.edge_count,
-            },
-        })
+        try:
+            event = event_queue.get_nowait()
+            await ws_manager.broadcast({
+                "type": event.event_type.value,
+                "data": event.data,
+                "stats": {
+                    "node_count": store.node_count,
+                    "edge_count": store.edge_count,
+                },
+            })
+        except queue.Empty:
+            await asyncio.sleep(0.05)  # 50ms poll interval — responsive enough for POC
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +97,7 @@ def create_app(store: GraphStore) -> FastAPI:
                used by the conversation loop.
     """
     ws_manager = WebSocketManager()
-    event_queue: asyncio.Queue[GraphEvent] = asyncio.Queue(maxsize=1000)
+    event_queue: queue.Queue[GraphEvent] = queue.Queue(maxsize=1000)
     store.set_event_queue(event_queue)
 
     broadcaster_task: asyncio.Task | None = None
