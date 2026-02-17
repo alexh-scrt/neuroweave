@@ -7,7 +7,8 @@ def test_version():
     assert neuroweave.__version__ == "0.1.0"
 
 
-def test_main_callable():
+def test_main_runs_without_error():
     from neuroweave.main import main
 
-    assert callable(main)
+    # main() should complete without raising — it loads config + logging
+    main()
