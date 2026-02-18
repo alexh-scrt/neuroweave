@@ -1,10 +1,14 @@
-"""NeuroWeave entry point — conversation loop + visualization server."""
+"""NeuroWeave entry point — conversation loop + visualization server.
+
+This module is the standalone CLI for testing and development.
+When NeuroWeave is used as a library, agents call the async API in
+neuroweave.api instead of running this module.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import sys
-import threading
 
 import uvicorn
 
@@ -31,7 +35,7 @@ def create_llm_client(config: NeuroWeaveConfig) -> LLMClient:
         raise ValueError(f"Unknown LLM provider: {config.llm_provider}")
 
 
-def process_message(
+async def process_message(
     message: str,
     pipeline: ExtractionPipeline,
     store: GraphStore,
@@ -40,7 +44,7 @@ def process_message(
 
     This is the core loop body, factored out for testability.
     """
-    result = pipeline.extract(message)
+    result = await pipeline.extract(message)
     stats = ingest_extraction(store, result)
     return {
         "entities_extracted": len(result.entities),
@@ -50,34 +54,25 @@ def process_message(
     }
 
 
-def _start_server(store: GraphStore, host: str, port: int) -> None:
-    """Run the FastAPI visualization server in a background thread."""
-    app = create_app(store)
-    config = uvicorn.Config(
-        app, host=host, port=port, log_level="warning", access_log=False,
-    )
-    server = uvicorn.Server(config)
-    server.run()
-
-
-def run_conversation_loop(
+async def run_conversation_loop(
     pipeline: ExtractionPipeline,
     store: GraphStore,
     server_url: str,
 ) -> None:
-    """Interactive terminal conversation loop."""
+    """Interactive terminal conversation loop (async)."""
     log = get_logger("main")
+    loop = asyncio.get_event_loop()
 
     print("\n╔══════════════════════════════════════════════════════════╗")
-    print("║  NeuroWeave v0.1.0 — Knowledge Graph Memory POC        ║")
-    print("║  Type a message to extract knowledge.                   ║")
-    print(f"║  Graph visualization: {server_url:<34s} ║")
-    print("║  Commands: /graph  /stats  /quit                        ║")
-    print("╚══════════════════════════════════════════════════════════╝\n")
+    print(  "║  NeuroWeave v0.1.0 — Knowledge Graph Memory POC          ║")
+    print(  "║  Type a message to extract knowledge.                    ║")
+    print( f"║  Graph visualization: {server_url:<34s} ║")
+    print(  "║  Commands: /graph  /stats  /quit                         ║")
+    print(  "╚══════════════════════════════════════════════════════════╝\n")
 
     while True:
         try:
-            message = input("You: ").strip()
+            message = await loop.run_in_executor(None, lambda: input("You: ").strip())
         except (EOFError, KeyboardInterrupt):
             print("\nGoodbye!")
             break
@@ -89,7 +84,7 @@ def run_conversation_loop(
             _handle_command(message, store)
             continue
 
-        stats = process_message(message, pipeline, store)
+        stats = await process_message(message, pipeline, store)
 
         print(
             f"  → Extracted {stats['entities_extracted']} entities, "
@@ -139,7 +134,16 @@ def _handle_command(command: str, store: GraphStore) -> None:
     print()
 
 
-def main() -> None:
+async def _run_server(app, host: str, port: int) -> None:
+    """Run uvicorn server as an async task."""
+    config = uvicorn.Config(
+        app, host=host, port=port, log_level="warning", access_log=False,
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+async def async_main() -> None:
     """Run the NeuroWeave conversation loop with visualization server."""
     config = NeuroWeaveConfig.load()
     configure_logging(config)
@@ -157,18 +161,26 @@ def main() -> None:
     pipeline = ExtractionPipeline(llm_client)
     store = GraphStore()
 
-    # Start visualization server in background thread
+    # Start visualization server as a background task in the same event loop
     server_url = f"http://{config.server_host}:{config.server_port}"
-    server_thread = threading.Thread(
-        target=_start_server,
-        args=(store, config.server_host, config.server_port),
-        daemon=True,
-    )
-    server_thread.start()
+    app = create_app(store)
+    server_task = asyncio.create_task(_run_server(app, config.server_host, config.server_port))
 
     log.info("neuroweave.ready", server_url=server_url)
 
-    run_conversation_loop(pipeline, store, server_url)
+    try:
+        await run_conversation_loop(pipeline, store, server_url)
+    finally:
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
+
+
+def main() -> None:
+    """Synchronous entry point for the CLI."""
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # NeuroWeave — Architecture
 
-> Detailed technical architecture for the NeuroWeave POC.
+> Technical architecture for NeuroWeave v0.1.0.
 > For quickstart and usage, see [README.md](README.md).
 
 ---
@@ -30,6 +30,7 @@
     - [Graph Events](#graph-events)
   - [Thread Model](#thread-model)
   - [Error Handling](#error-handling)
+  - [Phase 1 Components](#phase-1-components)
   - [Testing Architecture](#testing-architecture)
   - [Design Decisions](#design-decisions)
   - [Future Architecture](#future-architecture)
@@ -59,7 +60,7 @@ graph LR
     style BROWSER fill:#fbbf24,stroke:#d97706,color:#000
 ```
 
-The system runs as a single Python process with two threads: the main thread drives the conversation loop (blocking `input()`), and a daemon thread runs the FastAPI/uvicorn server with its own asyncio event loop.
+When used as a CLI, the system runs as a single Python process with two threads: the main thread drives the conversation loop (blocking `input()`), and a daemon thread runs the FastAPI/uvicorn server. When used as a library, NeuroWeave runs fully async within the host agent's event loop.
 
 ---
 
@@ -98,6 +99,16 @@ flowchart TB
         NX[("NetworkX MultiDiGraph")]
         INGEST["ingest_extraction"]
         MAKE_N["make_node / make_edge"]
+        QUERY_ENG["query_subgraph"]
+        NL_PLAN["NLQueryPlanner"]
+  end
+ subgraph s8["Public API — api.py"]
+        FACADE["NeuroWeave"]
+        PROC_RES["ProcessResult"]
+        CTX_RES["ContextResult"]
+  end
+ subgraph s9["Events — events.py"]
+        EBUS["EventBus"]
   end
  subgraph s6["Server — server/"]
         APP["create_app"]
@@ -115,9 +126,14 @@ flowchart TB
     PIPELINE --> LLM_ABS & REPAIR
     INGEST --> STORE
     STORE --> NX
-    STORE -- events --> BCAST
+    STORE -- events --> EBUS
+    EBUS --> BCAST
+    EBUS --> FACADE
     APP --> WSMGR & BCAST & ROUTES
     ROUTES --> HTML
+    FACADE --> PIPELINE & QUERY_ENG & NL_PLAN & EBUS
+    NL_PLAN --> LLM_ABS
+    QUERY_ENG --> STORE
     WSMGR --> HTML
 
     style FACTORY fill:#E1BEE7
@@ -137,6 +153,12 @@ flowchart TB
     style s2 fill:#FFF9C4
     style s3 fill:#FFF9C4
     style s6 fill:#FFCDD2
+    style s8 fill:#D1C4E9
+    style s9 fill:#B2EBF2
+    style FACADE fill:#D1C4E9
+    style EBUS fill:#B2EBF2
+    style QUERY_ENG fill:#BBDEFB
+    style NL_PLAN fill:#BBDEFB
 ```
 
 ### Configuration System
@@ -809,6 +831,59 @@ graph TB
 
 ---
 
+## Phase 1 Components
+
+Phase 1 (v0.1.0) adds the library integration layer on top of the POC, transforming NeuroWeave from a standalone CLI into an importable async Python library.
+
+### Query Engine (`neuroweave.graph.query`)
+
+Structured queries with entity resolution (case-insensitive name matching), hop traversal (BFS from seed entities), relation filtering, and confidence thresholds. Returns a `QueryResult` dataclass containing matching nodes, edges, and traversal metadata.
+
+```python
+result = query_subgraph(store, entities=["Lena"], relations=["prefers"], max_hops=1)
+result.node_names()  # ['Lena', 'sushi']
+```
+
+### NL Query Planner (`neuroweave.graph.nl_query`)
+
+Translates natural language questions into structured query plans by injecting the current graph schema (entity names, relation types, node types) into an LLM prompt. The LLM returns a JSON query plan which is parsed and executed against the graph store. Falls back to a broad whole-graph search if the LLM returns unparseable output.
+
+```python
+planner = NLQueryPlanner(llm_client, store)
+result = await planner.query("what does my wife like?")
+# LLM resolves "my wife" → Lena, "like" → prefers relation
+```
+
+### Event Bus (`neuroweave.events`)
+
+Async pub/sub system replacing the raw `queue.Queue` approach from the POC. Subscribers register async callbacks, optionally filtering by event type. Emission is non-blocking via `asyncio.create_task()` — one slow handler doesn't block others. A 5-second timeout per handler invocation triggers a warning but does not cancel the handler. Handler exceptions are caught and counted, never propagated.
+
+```python
+bus = EventBus()
+await bus.subscribe(handler, event_types={GraphEventType.NODE_ADDED})
+await bus.emit(GraphEvent(event_type=GraphEventType.NODE_ADDED, data={...}))
+```
+
+### NeuroWeave Facade (`neuroweave.api`)
+
+The public API entry point that wires all components together. Provides three main methods:
+
+| Method | Direction | Returns |
+|--------|-----------|--------|
+| `process(message)` | Write | `ProcessResult` — extraction details + graph delta |
+| `query(...)` | Read | `QueryResult` — auto-detects structured vs NL |
+| `get_context(message)` | Write + Read | `ContextResult` — process + query combined |
+
+Supports both programmatic construction and YAML-based configuration. Async context manager for lifecycle management. Optionally starts the visualization server.
+
+```python
+async with NeuroWeave(llm_provider="mock") as nw:
+    context = await nw.get_context("My wife Lena loves sushi")
+    print(context.relevant.node_names())
+```
+
+---
+
 ## Testing Architecture
 
 ```mermaid
@@ -849,6 +924,26 @@ graph TB
         LIVE[Event emission, server reflects graph, incremental growth via API]
     end
 
+    subgraph "test_query.py — 37 tests"
+        QUERY[Structured queries, hop traversal, entity resolution, confidence filter]
+    end
+
+    subgraph "test_nl_query.py — 38 tests"
+        NL[NL query planner, parsing, fallback, schema injection]
+    end
+
+    subgraph "test_events.py — 33 tests"
+        EVENTS[EventBus lifecycle, timeout, errors, type filtering]
+    end
+
+    subgraph "test_api.py — 36 tests"
+        API[Facade lifecycle, process, query, get_context, events]
+    end
+
+    subgraph "test_integration.py — 28 tests"
+        INTEG[Full end-to-end with 5-message corpus through facade]
+    end
+
     SMOKE --> CONFIG
     CONFIG --> LOGGING
     LOGGING --> GRAPH
@@ -857,32 +952,44 @@ graph TB
     INGEST_T --> SERVER_T
     SERVER_T --> E2E
     E2E --> LIVE
+    LIVE --> QUERY
+    QUERY --> NL
+    NL --> EVENTS
+    EVENTS --> API
+    API --> INTEG
 
+    style INTEG fill:#6c63ff,stroke:#4a44b3,color:#fff
     style E2E fill:#6c63ff,stroke:#4a44b3,color:#fff
 ```
 
-**Total: ~136 tests across 9 test files.**
+**Total: ~308 tests across 16 test files.**
 
-The test corpus in `conftest.py` defines a shared 5-message conversation with pre-registered mock LLM responses. Both `test_extraction.py` (unit) and `test_e2e.py` / `test_live_updates.py` (integration) use this same corpus, ensuring consistency across test layers.
+The test corpus in `conftest.py` defines a shared 5-message conversation with pre-registered mock LLM responses. Both `test_extraction.py` (unit) and `test_e2e.py` / `test_live_updates.py` / `test_integration.py` (integration) use this same corpus, ensuring consistency across test layers.
 
 **`test_e2e.py` is the POC proof.** If these 22 tests pass, the core claim is validated: a conversation with an AI agent results in a correctly structured knowledge graph.
+
+**`test_integration.py` is the Phase 1 proof.** These 28 tests run the full 5-message corpus through the `NeuroWeave` facade, verifying that `process()`, `query()`, `get_context()`, and event subscription all work end-to-end.
 
 ---
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Graph library | NetworkX `MultiDiGraph` | In-memory, zero setup, parallel edges, swap to Neo4j later with same interface |
-| LLM abstraction | Python `Protocol` | Structural typing — no base class inheritance, mock and real clients are interchangeable |
-| Event delivery | `queue.Queue` (stdlib) | Thread-safe across main thread (writes) and server thread (reads). `asyncio.Queue` is not cross-thread safe |
-| Server framework | FastAPI + uvicorn | Async WebSocket support, fast REST, minimal boilerplate |
-| Frontend | Single HTML file with Cytoscape.js CDN | No build step, no node_modules, instant dev feedback |
-| Config loading | YAML → env vars | Checked-in defaults for reproducibility, env overrides for deployment |
-| Logging | structlog (JSON + console) | Structured key-value pairs from day one, trivial to switch to JSON for production |
-| Test strategy | Mock LLM as first-class citizen | Fast, deterministic, free — real LLM integration tests come later |
-| Extraction | Single LLM call | POC simplicity. Production evolves to 7-stage pipeline behind same interface |
-| Deduplication | Case-insensitive name match | Simple for POC. Production uses embedding-based entity resolution |
+| Decision | Choice | Rationale | Phase |
+|----------|--------|-----------|-------|
+| Graph library | NetworkX `MultiDiGraph` | In-memory, zero setup, parallel edges, swap to Neo4j later with same interface | POC |
+| LLM abstraction | Python `Protocol` | Structural typing — no base class inheritance, mock and real clients are interchangeable | POC |
+| Event delivery | `EventBus` (async pub/sub) | Replaces raw `queue.Queue`. Type-filtered subscriptions, timeout monitoring, error isolation. Non-blocking via `asyncio.create_task()` | Phase 1 |
+| Server framework | FastAPI + uvicorn | Async WebSocket support, fast REST, minimal boilerplate | POC |
+| Frontend | Single HTML file with Cytoscape.js CDN | No build step, no node_modules, instant dev feedback | POC |
+| Config loading | YAML → env vars | Checked-in defaults for reproducibility, env overrides for deployment | POC |
+| Logging | structlog (JSON + console) | Structured key-value pairs from day one, trivial to switch to JSON for production | POC |
+| Test strategy | Mock LLM as first-class citizen | Fast, deterministic, free — real LLM integration tests come later | POC |
+| Extraction | Single LLM call | POC simplicity. Production evolves to 7-stage pipeline behind same interface | POC |
+| Deduplication | Case-insensitive name match | Simple for POC. Production uses embedding-based entity resolution | POC |
+| Query engine | BFS hop traversal | Structured queries with entity resolution, relation filtering, confidence thresholds. Interface designed for Neo4j swap | Phase 1 |
+| NL queries | LLM-powered query planning | Inject graph schema into LLM prompt, parse response into structured query. Graceful fallback to broad search | Phase 1 |
+| Public API | Facade pattern | Single `NeuroWeave` class hides all internals. Three methods: `process()`, `query()`, `get_context()`. Async context manager | Phase 1 |
+| Library packaging | Hatchling + PEP 561 | Modern build backend, `py.typed` marker for type checker support, clean `__all__` exports | Phase 1 |
 
 ---
 

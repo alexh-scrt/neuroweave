@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from neuroweave.graph.store import GraphEvent, GraphStore
+from neuroweave.events import EventBus
+from neuroweave.graph.store import GraphEvent, GraphEventType, GraphStore
 from neuroweave.logging import get_logger
 
 log = get_logger("server")
@@ -56,23 +56,39 @@ class WebSocketManager:
 
 
 # ---------------------------------------------------------------------------
-# Event broadcaster — polls thread-safe queue, pushes to WebSockets
+# App factory
 # ---------------------------------------------------------------------------
 
-async def _event_broadcaster(
-    event_queue: queue.Queue[GraphEvent],
-    ws_manager: WebSocketManager,
-    store: GraphStore,
-) -> None:
-    """Background task: poll graph events from thread-safe queue and broadcast.
+def create_app(store: GraphStore, event_bus: EventBus | None = None) -> FastAPI:
+    """Create the FastAPI app wired to a GraphStore.
 
-    Uses a short sleep to yield control — the queue.Queue is filled by the
-    main thread (conversation loop), this task runs in the server's asyncio
-    event loop.
+    Args:
+        store: The graph store to serve. Must already be the same instance
+               used by the extraction pipeline.
+        event_bus: Optional EventBus to subscribe to for graph events.
+                   If not provided, falls back to the legacy asyncio.Queue
+                   approach for backward compatibility.
     """
-    while True:
-        try:
-            event = event_queue.get_nowait()
+    ws_manager = WebSocketManager()
+
+    # --- EventBus-based broadcasting (preferred) ---
+    async def _on_graph_event(event: GraphEvent) -> None:
+        """EventBus handler: broadcast graph events to WebSocket clients."""
+        await ws_manager.broadcast({
+            "type": event.event_type.value,
+            "data": event.data,
+            "stats": {
+                "node_count": store.node_count,
+                "edge_count": store.edge_count,
+            },
+        })
+
+    # --- Legacy queue-based broadcasting (fallback) ---
+    async def _queue_broadcaster(
+        event_queue: asyncio.Queue[GraphEvent],
+    ) -> None:
+        while True:
+            event = await event_queue.get()
             await ws_manager.broadcast({
                 "type": event.event_type.value,
                 "data": event.data,
@@ -81,40 +97,45 @@ async def _event_broadcaster(
                     "edge_count": store.edge_count,
                 },
             })
-        except queue.Empty:
-            await asyncio.sleep(0.05)  # 50ms poll interval — responsive enough for POC
-
-
-# ---------------------------------------------------------------------------
-# App factory
-# ---------------------------------------------------------------------------
-
-def create_app(store: GraphStore) -> FastAPI:
-    """Create the FastAPI app wired to a GraphStore.
-
-    Args:
-        store: The graph store to serve. Must already be the same instance
-               used by the conversation loop.
-    """
-    ws_manager = WebSocketManager()
-    event_queue: queue.Queue[GraphEvent] = queue.Queue(maxsize=1000)
-    store.set_event_queue(event_queue)
 
     broadcaster_task: asyncio.Task | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal broadcaster_task
-        broadcaster_task = asyncio.create_task(
-            _event_broadcaster(event_queue, ws_manager, store)
-        )
-        log.info("server.started", static_dir=str(_STATIC_DIR))
+
+        if event_bus is not None:
+            # Subscribe to EventBus — handlers are invoked automatically
+            event_bus.subscribe(
+                _on_graph_event,
+                event_types={
+                    GraphEventType.NODE_ADDED,
+                    GraphEventType.EDGE_ADDED,
+                    GraphEventType.NODE_UPDATED,
+                    GraphEventType.EDGE_UPDATED,
+                },
+                label="ws_broadcaster",
+            )
+            log.info("server.started", mode="event_bus", static_dir=str(_STATIC_DIR))
+        else:
+            # Legacy: poll asyncio.Queue
+            event_queue: asyncio.Queue[GraphEvent] = asyncio.Queue(maxsize=1000)
+            store.set_event_queue(event_queue)
+            broadcaster_task = asyncio.create_task(
+                _queue_broadcaster(event_queue)
+            )
+            log.info("server.started", mode="legacy_queue", static_dir=str(_STATIC_DIR))
+
         yield
-        broadcaster_task.cancel()
-        try:
-            await broadcaster_task
-        except asyncio.CancelledError:
-            pass
+
+        if event_bus is not None:
+            event_bus.unsubscribe(_on_graph_event)
+        if broadcaster_task is not None:
+            broadcaster_task.cancel()
+            try:
+                await broadcaster_task
+            except asyncio.CancelledError:
+                pass
 
     app = FastAPI(title="NeuroWeave Graph Visualizer", lifespan=lifespan)
 

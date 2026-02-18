@@ -7,7 +7,7 @@ of the same methods.
 
 from __future__ import annotations
 
-import queue
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -81,31 +81,47 @@ class GraphEvent:
 class GraphStore:
     """In-memory knowledge graph with event emission.
 
-    Uses stdlib queue.Queue for thread-safe event delivery — the conversation
-    loop runs in the main thread while the FastAPI server runs in a background
-    thread. asyncio.Queue is NOT thread-safe across threads; queue.Queue is.
+    Events are dispatched through an EventBus (preferred) or a legacy
+    asyncio.Queue. Since v0.1.0, NeuroWeave is fully async — the agent,
+    extraction pipeline, and visualization server all share the same
+    asyncio event loop.
     """
 
     def __init__(self) -> None:
         self._graph = nx.MultiDiGraph()
-        self._event_queue: queue.Queue[GraphEvent] | None = None
+        self._event_queue: asyncio.Queue[GraphEvent] | None = None
+        self._event_bus: Any | None = None  # EventBus (imported lazily to avoid circular)
 
     # -- Event wiring -------------------------------------------------------
 
-    def set_event_queue(self, q: queue.Queue[GraphEvent]) -> None:
-        """Attach a thread-safe queue to receive graph mutation events."""
+    def set_event_bus(self, bus: Any) -> None:
+        """Attach an EventBus to receive graph mutation events (preferred).
+
+        When an EventBus is set, events are emitted through it. The legacy
+        asyncio.Queue is still supported as a fallback.
+        """
+        self._event_bus = bus
+
+    @property
+    def event_bus(self) -> Any | None:
+        return self._event_bus
+
+    def set_event_queue(self, q: asyncio.Queue[GraphEvent]) -> None:
+        """Attach an asyncio queue to receive graph mutation events (legacy)."""
         self._event_queue = q
 
     @property
-    def event_queue(self) -> queue.Queue[GraphEvent] | None:
+    def event_queue(self) -> asyncio.Queue[GraphEvent] | None:
         return self._event_queue
 
     def _emit(self, event: GraphEvent) -> None:
-        """Push event to queue (non-blocking). Silently drops if no queue or full."""
-        if self._event_queue is not None:
+        """Dispatch event through EventBus (preferred) or legacy queue."""
+        if self._event_bus is not None:
+            self._event_bus.emit(event)
+        elif self._event_queue is not None:
             try:
                 self._event_queue.put_nowait(event)
-            except queue.Full:
+            except asyncio.QueueFull:
                 log.warning("graph.event_queue_full", event_type=event.event_type.value)
 
     # -- Node operations ----------------------------------------------------

@@ -1,0 +1,104 @@
+site_name: NeuroWeave
+site_description: Real-time knowledge graph memory for agentic AI platforms
+site_url: https://neuroweave.readthedocs.io
+repo_url: https://github.com/neuroweave/neuroweave
+repo_name: neuroweave/neuroweave
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - User Guide:
+    - Configuration: user-guide/configuration.md
+    - Querying the Graph: user-guide/queries.md
+    - Event Subscription: user-guide/events.md
+    - Visualization: user-guide/visualization.md
+  - API Reference:
+    - Overview: api/index.md
+    - NeuroWeave: api/neuroweave.md
+    - Graph Store: api/graph-store.md
+    - Extraction: api/extraction.md
+    - Events: api/events.md
+  - Architecture: architecture.md
+  - Design Documents:
+    - Architecture Overview: design/em_arch_overview.md
+    - Experience Memory: design/experience_memory.md
+    - Integration & Testing: design/em_integration.md
+    - Pre-Design: design/em_pre_design.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 2
+            members_order: source
+            docstring_style: google
+            show_signature_annotations: true
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/neuroweave/neuroweave

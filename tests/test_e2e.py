@@ -42,14 +42,14 @@ def e2e_store() -> GraphStore:
 
 
 @pytest.fixture
-def e2e_result(
+async def e2e_result(
     mock_llm_with_corpus: MockLLMClient,
     e2e_store: GraphStore,
 ) -> GraphStore:
     """Run all 5 messages through the full pipeline, return the populated store."""
     pipeline = ExtractionPipeline(mock_llm_with_corpus)
     for message in CONVERSATION:
-        process_message(message, pipeline, e2e_store)
+        await process_message(message, pipeline, e2e_store)
     return e2e_store
 
 
@@ -60,17 +60,17 @@ def e2e_result(
 class TestConversationBuildsGraph:
     """After 5 messages, the graph contains the expected knowledge."""
 
-    def test_graph_is_not_empty(self, e2e_result: GraphStore):
+    async def test_graph_is_not_empty(self, e2e_result: GraphStore):
         assert e2e_result.node_count > 0
         assert e2e_result.edge_count > 0
 
-    def test_expected_node_count(self, e2e_result: GraphStore):
+    async def test_expected_node_count(self, e2e_result: GraphStore):
         # Alex, User, Lena, Tokyo, software engineering, sushi, ramen,
         # children, Python = 9 unique entities
         # (User appears in multiple messages but is deduplicated)
         assert e2e_result.node_count >= 8
 
-    def test_expected_edge_count(self, e2e_result: GraphStore):
+    async def test_expected_edge_count(self, e2e_result: GraphStore):
         # named, occupation, married_to, 2x traveling_to, 2x prefers,
         # has_children, experienced_with = 9+
         assert e2e_result.edge_count >= 7
@@ -79,19 +79,19 @@ class TestConversationBuildsGraph:
 class TestPeopleExtracted:
     """People mentioned in the conversation are in the graph."""
 
-    def test_alex_exists(self, e2e_result: GraphStore):
+    async def test_alex_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="Alex")
         assert len(matches) >= 1
 
-    def test_lena_exists(self, e2e_result: GraphStore):
+    async def test_lena_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="Lena")
         assert len(matches) >= 1
 
-    def test_user_exists(self, e2e_result: GraphStore):
+    async def test_user_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="User")
         assert len(matches) >= 1
 
-    def test_children_exist(self, e2e_result: GraphStore):
+    async def test_children_exist(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="children")
         assert len(matches) >= 1
 
@@ -99,20 +99,20 @@ class TestPeopleExtracted:
 class TestPlacesAndConcepts:
     """Places and concepts mentioned are in the graph."""
 
-    def test_tokyo_exists(self, e2e_result: GraphStore):
+    async def test_tokyo_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="Tokyo")
         assert len(matches) == 1
         assert matches[0]["node_type"] == NodeType.ENTITY.value
 
-    def test_python_exists(self, e2e_result: GraphStore):
+    async def test_python_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="Python")
         assert len(matches) == 1
 
-    def test_sushi_exists(self, e2e_result: GraphStore):
+    async def test_sushi_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="sushi")
         assert len(matches) >= 1
 
-    def test_ramen_exists(self, e2e_result: GraphStore):
+    async def test_ramen_exists(self, e2e_result: GraphStore):
         matches = e2e_result.find_nodes(name_contains="ramen")
         assert len(matches) >= 1
 
@@ -120,17 +120,17 @@ class TestPlacesAndConcepts:
 class TestRelationships:
     """Key relationships are captured with correct types and confidence."""
 
-    def test_married_to_relation(self, e2e_result: GraphStore):
+    async def test_married_to_relation(self, e2e_result: GraphStore):
         edges = e2e_result.get_edges(relation="married_to")
         assert len(edges) >= 1
         edge = edges[0]
         assert edge["confidence"] >= 0.85
 
-    def test_traveling_to_relation(self, e2e_result: GraphStore):
+    async def test_traveling_to_relation(self, e2e_result: GraphStore):
         edges = e2e_result.get_edges(relation="traveling_to")
         assert len(edges) >= 1  # At least User → Tokyo
 
-    def test_food_preferences(self, e2e_result: GraphStore):
+    async def test_food_preferences(self, e2e_result: GraphStore):
         prefs = e2e_result.get_edges(relation="prefers")
         assert len(prefs) >= 2  # Lena→sushi, User→ramen
         targets = {e["target_id"] for e in prefs}
@@ -142,12 +142,12 @@ class TestRelationships:
                 target_names.add(node["name"].lower())
         assert "sushi" in target_names or "ramen" in target_names
 
-    def test_has_children_relation(self, e2e_result: GraphStore):
+    async def test_has_children_relation(self, e2e_result: GraphStore):
         edges = e2e_result.get_edges(relation="has_children")
         assert len(edges) >= 1
         assert edges[0]["confidence"] >= 0.85
 
-    def test_python_experience(self, e2e_result: GraphStore):
+    async def test_python_experience(self, e2e_result: GraphStore):
         edges = e2e_result.get_edges(relation="experienced_with")
         assert len(edges) >= 1
         edge = edges[0]
@@ -157,14 +157,14 @@ class TestRelationships:
 class TestConfidenceScores:
     """Confidence scores are in expected ranges."""
 
-    def test_all_confidences_in_range(self, e2e_result: GraphStore):
+    async def test_all_confidences_in_range(self, e2e_result: GraphStore):
         data = e2e_result.to_dict()
         for edge in data["edges"]:
             assert 0.0 <= edge["confidence"] <= 1.0, (
                 f"Edge {edge['relation']} has confidence {edge['confidence']} out of range"
             )
 
-    def test_explicit_facts_high_confidence(self, e2e_result: GraphStore):
+    async def test_explicit_facts_high_confidence(self, e2e_result: GraphStore):
         """Explicit statements should have confidence >= 0.85."""
         high_confidence_relations = ["married_to", "named", "has_children"]
         for rel in high_confidence_relations:
@@ -178,7 +178,7 @@ class TestConfidenceScores:
 class TestGraphStructure:
     """The graph is structurally sound."""
 
-    def test_no_orphan_edges(self, e2e_result: GraphStore):
+    async def test_no_orphan_edges(self, e2e_result: GraphStore):
         """Every edge connects two existing nodes."""
         data = e2e_result.to_dict()
         node_ids = {n["id"] for n in data["nodes"]}
@@ -186,13 +186,13 @@ class TestGraphStructure:
             assert edge["source_id"] in node_ids, f"Orphan source: {edge['source_id']}"
             assert edge["target_id"] in node_ids, f"Orphan target: {edge['target_id']}"
 
-    def test_serialization_roundtrip(self, e2e_result: GraphStore):
+    async def test_serialization_roundtrip(self, e2e_result: GraphStore):
         """to_dict() produces a complete, consistent snapshot."""
         data = e2e_result.to_dict()
         assert data["stats"]["node_count"] == len(data["nodes"])
         assert data["stats"]["edge_count"] == len(data["edges"])
 
-    def test_user_is_central_node(self, e2e_result: GraphStore):
+    async def test_user_is_central_node(self, e2e_result: GraphStore):
         """User should be the most connected node in the graph."""
         user_nodes = e2e_result.find_nodes(name_contains="User")
         assert len(user_nodes) >= 1
@@ -205,7 +205,7 @@ class TestGraphStructure:
 class TestIncrementalGrowth:
     """The graph builds incrementally — each message adds to the previous state."""
 
-    def test_graph_grows_with_each_message(self, mock_llm_with_corpus: MockLLMClient):
+    async def test_graph_grows_with_each_message(self, mock_llm_with_corpus: MockLLMClient):
         store = GraphStore()
         pipeline = ExtractionPipeline(mock_llm_with_corpus)
 
@@ -213,7 +213,7 @@ class TestIncrementalGrowth:
         prev_edges = 0
 
         for i, message in enumerate(CONVERSATION):
-            process_message(message, pipeline, store)
+            await process_message(message, pipeline, store)
             # Graph should be at least as large as before (may grow or stay same
             # if message adds no new info, but never shrink)
             assert store.node_count >= prev_nodes, f"Nodes shrank after message {i+1}"
@@ -225,11 +225,11 @@ class TestIncrementalGrowth:
         assert store.node_count >= 8
         assert store.edge_count >= 7
 
-    def test_llm_called_for_each_message(self, mock_llm_with_corpus: MockLLMClient):
+    async def test_llm_called_for_each_message(self, mock_llm_with_corpus: MockLLMClient):
         store = GraphStore()
         pipeline = ExtractionPipeline(mock_llm_with_corpus)
 
         for message in CONVERSATION:
-            process_message(message, pipeline, store)
+            await process_message(message, pipeline, store)
 
         assert mock_llm_with_corpus.call_count == len(CONVERSATION)

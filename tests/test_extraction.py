@@ -190,30 +190,30 @@ class TestRepairLLMJson:
 # ---------------------------------------------------------------------------
 
 class TestMockLLMClient:
-    def test_matches_substring(self, mock_llm: MockLLMClient):
-        response = mock_llm.extract("system", "I love Python")
+    async def test_matches_substring(self, mock_llm: MockLLMClient):
+        response = await mock_llm.extract("system", "I love Python")
         parsed = json.loads(response)
         assert any(e["name"] == "Python" for e in parsed["entities"])
 
-    def test_case_insensitive_match(self, mock_llm: MockLLMClient):
-        response = mock_llm.extract("system", "I LOVE PYTHON")
+    async def test_case_insensitive_match(self, mock_llm: MockLLMClient):
+        response = await mock_llm.extract("system", "I LOVE PYTHON")
         parsed = json.loads(response)
         assert any(e["name"] == "Python" for e in parsed["entities"])
 
-    def test_no_match_returns_empty(self, mock_llm: MockLLMClient):
-        response = mock_llm.extract("system", "Hello there!")
+    async def test_no_match_returns_empty(self, mock_llm: MockLLMClient):
+        response = await mock_llm.extract("system", "Hello there!")
         parsed = json.loads(response)
         assert parsed["entities"] == []
         assert parsed["relations"] == []
 
-    def test_tracks_call_count(self, mock_llm: MockLLMClient):
+    async def test_tracks_call_count(self, mock_llm: MockLLMClient):
         assert mock_llm.call_count == 0
-        mock_llm.extract("sys", "msg1")
-        mock_llm.extract("sys", "msg2")
+        await mock_llm.extract("sys", "msg1")
+        await mock_llm.extract("sys", "msg2")
         assert mock_llm.call_count == 2
 
-    def test_tracks_last_prompts(self, mock_llm: MockLLMClient):
-        mock_llm.extract("my system prompt", "hello world")
+    async def test_tracks_last_prompts(self, mock_llm: MockLLMClient):
+        await mock_llm.extract("my system prompt", "hello world")
         assert mock_llm.last_system_prompt == "my system prompt"
         assert mock_llm.last_user_message == "hello world"
 
@@ -223,28 +223,28 @@ class TestMockLLMClient:
 # ---------------------------------------------------------------------------
 
 class TestEntityExtraction:
-    def test_explicit_person(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("My wife's name is Lena")
+    async def test_explicit_person(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("My wife's name is Lena")
         names = {e.name for e in result.entities}
         assert "Lena" in names
 
-    def test_tool_entity(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I love Python")
+    async def test_tool_entity(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I love Python")
         types = {e.entity_type for e in result.entities if e.name == "Python"}
         assert "tool" in types
 
-    def test_place_entity(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("Lena and I are going to Tokyo in March")
+    async def test_place_entity(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("Lena and I are going to Tokyo in March")
         names = {e.name for e in result.entities}
         assert "Tokyo" in names
 
-    def test_no_entities_from_filler(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("Thanks!")
+    async def test_no_entities_from_filler(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("Thanks!")
         assert result.entities == []
         assert result.relations == []
 
-    def test_entity_properties_preserved(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("My name is Alex and I'm a software engineer")
+    async def test_entity_properties_preserved(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("My name is Alex and I'm a software engineer")
         alex = next((e for e in result.entities if e.name == "Alex"), None)
         assert alex is not None
         assert alex.properties.get("is_user") is True
@@ -255,32 +255,32 @@ class TestEntityExtraction:
 # ---------------------------------------------------------------------------
 
 class TestRelationExtraction:
-    def test_explicit_relation(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("My wife's name is Lena")
+    async def test_explicit_relation(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("My wife's name is Lena")
         assert any(r.relation == "married_to" for r in result.relations)
 
-    def test_preference_relation(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I love Python")
+    async def test_preference_relation(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I love Python")
         pref = next((r for r in result.relations if r.relation == "prefers"), None)
         assert pref is not None
         assert pref.target == "Python"
         assert pref.confidence >= 0.85
 
-    def test_negative_relation(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I don't like Java")
+    async def test_negative_relation(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I don't like Java")
         rel = next((r for r in result.relations if r.target == "Java"), None)
         assert rel is not None
         assert rel.relation == "dislikes"
         assert rel.confidence >= 0.80
 
-    def test_hedged_relation_lower_confidence(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I might try Rust")
+    async def test_hedged_relation_lower_confidence(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I might try Rust")
         rel = next((r for r in result.relations if r.target == "Rust"), None)
         assert rel is not None
         assert rel.confidence < 0.60
 
-    def test_multi_entity_attribution(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("She loves sushi but I prefer ramen")
+    async def test_multi_entity_attribution(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("She loves sushi but I prefer ramen")
         lena_pref = next(
             (r for r in result.relations if r.source == "Lena" and r.target == "sushi"), None
         )
@@ -290,8 +290,8 @@ class TestRelationExtraction:
         assert lena_pref is not None
         assert user_pref is not None
 
-    def test_relation_properties_preserved(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("Lena and I are going to Tokyo in March")
+    async def test_relation_properties_preserved(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("Lena and I are going to Tokyo in March")
         travel = next(
             (r for r in result.relations if r.relation == "traveling_to" and r.source == "User"),
             None,
@@ -305,19 +305,19 @@ class TestRelationExtraction:
 # ---------------------------------------------------------------------------
 
 class TestExtractionResultMetadata:
-    def test_duration_tracked(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I love Python")
+    async def test_duration_tracked(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I love Python")
         assert result.duration_ms >= 0
 
-    def test_raw_response_captured(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("I love Python")
+    async def test_raw_response_captured(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("I love Python")
         assert result.raw_response != ""
         # Should be valid JSON
         parsed = json.loads(result.raw_response)
         assert "entities" in parsed
 
-    def test_empty_message_handled(self, pipeline: ExtractionPipeline):
-        result = pipeline.extract("")
+    async def test_empty_message_handled(self, pipeline: ExtractionPipeline):
+        result = await pipeline.extract("")
         assert isinstance(result, ExtractionResult)
         assert result.entities == []
 
@@ -327,36 +327,36 @@ class TestExtractionResultMetadata:
 # ---------------------------------------------------------------------------
 
 class TestExtractionResilience:
-    def test_llm_error_returns_empty_result(self):
+    async def test_llm_error_returns_empty_result(self):
         """If the LLM raises, the pipeline returns an empty result (never crashes)."""
         from neuroweave.extraction.llm_client import LLMError
 
         class FailingLLM:
-            def extract(self, system_prompt: str, user_message: str) -> str:
+            async def extract(self, system_prompt: str, user_message: str) -> str:
                 raise LLMError("API timeout")
 
         pipeline = ExtractionPipeline(FailingLLM())
-        result = pipeline.extract("test message")
+        result = await pipeline.extract("test message")
         assert result.entities == []
         assert result.relations == []
 
-    def test_malformed_json_returns_empty_result(self):
+    async def test_malformed_json_returns_empty_result(self):
         """If the LLM returns garbage, the pipeline returns an empty result."""
 
         class GarbageLLM:
-            def extract(self, system_prompt: str, user_message: str) -> str:
+            async def extract(self, system_prompt: str, user_message: str) -> str:
                 return "This is not JSON at all, just random text."
 
         pipeline = ExtractionPipeline(GarbageLLM())
-        result = pipeline.extract("test message")
+        result = await pipeline.extract("test message")
         assert result.entities == []
         assert result.relations == []
 
-    def test_partial_entities_skipped(self):
+    async def test_partial_entities_skipped(self):
         """Malformed entity dicts are skipped, valid ones are kept."""
 
         class PartialLLM:
-            def extract(self, system_prompt: str, user_message: str) -> str:
+            async def extract(self, system_prompt: str, user_message: str) -> str:
                 return json.dumps({
                     "entities": [
                         {"name": "Valid", "entity_type": "person"},
@@ -368,15 +368,15 @@ class TestExtractionResilience:
                 })
 
         pipeline = ExtractionPipeline(PartialLLM())
-        result = pipeline.extract("test")
+        result = await pipeline.extract("test")
         assert len(result.entities) == 1
         assert result.entities[0].name == "Valid"
 
-    def test_confidence_clamped(self):
+    async def test_confidence_clamped(self):
         """Confidence values outside [0, 1] are clamped."""
 
         class BadConfidenceLLM:
-            def extract(self, system_prompt: str, user_message: str) -> str:
+            async def extract(self, system_prompt: str, user_message: str) -> str:
                 return json.dumps({
                     "entities": [
                         {"name": "A", "entity_type": "person"},
@@ -389,6 +389,6 @@ class TestExtractionResilience:
                 })
 
         pipeline = ExtractionPipeline(BadConfidenceLLM())
-        result = pipeline.extract("test")
+        result = await pipeline.extract("test")
         assert result.relations[0].confidence == 1.0
         assert result.relations[1].confidence == 0.0

@@ -28,7 +28,8 @@ def ingest_extraction(store: GraphStore, result: ExtractionResult) -> dict[str, 
 
     - Entities are deduplicated by lowercase name.
     - Relations are added as edges between resolved entity nodes.
-    - Relations referencing unknown entities are logged and skipped.
+    - Entities referenced in relations but missing from the entities list
+      are auto-created as CONCEPT nodes (handles inconsistent LLM output).
 
     Args:
         store: The graph store to write to.
@@ -56,10 +57,13 @@ def ingest_extraction(store: GraphStore, result: ExtractionResult) -> dict[str, 
             continue
 
         node_type = _TYPE_MAP.get(entity.entity_type, NodeType.CONCEPT)
+        # Strip keys that collide with explicit make_node() params
+        extra = {k: v for k, v in entity.properties.items()
+                 if k not in ("name", "node_type", "id")}
         node = make_node(
             name=entity.name,
             node_type=node_type,
-            **(entity.properties),
+            **extra,
         )
         store.add_node(node)
         name_to_id[key] = node.id
@@ -73,21 +77,34 @@ def ingest_extraction(store: GraphStore, result: ExtractionResult) -> dict[str, 
         source_id = name_to_id.get(rel.source.lower())
         target_id = name_to_id.get(rel.target.lower())
 
+        # Auto-create missing entities referenced in relations.
+        # LLMs sometimes reference entities in relations that they forgot
+        # to include in the entities array. Rather than dropping the edge,
+        # we create the missing node with a best-guess type (CONCEPT).
         if source_id is None:
-            log.warning("ingest.unknown_source", source=rel.source, relation=rel.relation)
-            edges_skipped += 1
-            continue
+            log.info("ingest.auto_create_entity", name=rel.source, reason="missing_source")
+            node = make_node(name=rel.source, node_type=NodeType.CONCEPT)
+            store.add_node(node)
+            name_to_id[rel.source.lower()] = node.id
+            source_id = node.id
+            nodes_added += 1
         if target_id is None:
-            log.warning("ingest.unknown_target", target=rel.target, relation=rel.relation)
-            edges_skipped += 1
-            continue
+            log.info("ingest.auto_create_entity", name=rel.target, reason="missing_target")
+            node = make_node(name=rel.target, node_type=NodeType.CONCEPT)
+            store.add_node(node)
+            name_to_id[rel.target.lower()] = node.id
+            target_id = node.id
+            nodes_added += 1
 
+        # Strip keys that collide with explicit make_edge() params
+        extra = {k: v for k, v in rel.properties.items()
+                 if k not in ("source_id", "target_id", "relation", "confidence", "id")}
         edge = make_edge(
             source_id=source_id,
             target_id=target_id,
             relation=rel.relation,
             confidence=rel.confidence,
-            **(rel.properties),
+            **extra,
         )
         store.add_edge(edge)
         edges_added += 1

@@ -1,4 +1,4 @@
-"""LLM client abstraction — protocol + mock and Anthropic implementations.
+"""LLM client abstraction — async protocol + mock and Anthropic implementations.
 
 The protocol allows the extraction pipeline to work with any LLM backend.
 Tests use MockLLMClient; production uses AnthropicLLMClient.
@@ -17,7 +17,7 @@ log = get_logger("llm")
 class LLMClient(Protocol):
     """Protocol for LLM clients used by the extraction pipeline."""
 
-    def extract(self, system_prompt: str, user_message: str) -> str:
+    async def extract(self, system_prompt: str, user_message: str) -> str:
         """Send extraction prompt to LLM and return raw text response.
 
         Args:
@@ -58,7 +58,7 @@ class MockLLMClient:
         """Register a canned response for messages containing the given substring."""
         self._responses.append((message_contains.lower(), response))
 
-    def extract(self, system_prompt: str, user_message: str) -> str:
+    async def extract(self, system_prompt: str, user_message: str) -> str:
         self._call_count += 1
         self._last_system_prompt = system_prompt
         self._last_user_message = user_message
@@ -89,7 +89,7 @@ class MockLLMClient:
 # ---------------------------------------------------------------------------
 
 class AnthropicLLMClient:
-    """LLM client using the Anthropic API (Claude Haiku for extraction)."""
+    """LLM client using the Anthropic async API (Claude Haiku for extraction)."""
 
     def __init__(self, api_key: str, model: str) -> None:
         try:
@@ -97,14 +97,14 @@ class AnthropicLLMClient:
         except ImportError as e:
             raise ImportError("pip install anthropic") from e
 
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self._model = model
 
-    def extract(self, system_prompt: str, user_message: str) -> str:
+    async def extract(self, system_prompt: str, user_message: str) -> str:
         import anthropic
 
         try:
-            response = self._client.messages.create(
+            response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=1024,
                 system=system_prompt,

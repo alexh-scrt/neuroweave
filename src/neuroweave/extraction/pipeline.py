@@ -67,6 +67,10 @@ RULES:
 - The user speaking is always referred to as "User" in your output.
 - Extract people, organizations, tools, technologies, places, and concepts.
 - Extract relationships between entities with a confidence score (0.0 to 1.0).
+- CRITICAL: Every entity name referenced in a relation MUST also appear in the \
+entities array. If a relation uses "engineer" as source or target, "engineer" \
+must be in the entities list. Never reference an entity in a relation without \
+declaring it first.
 - For explicit statements ("My name is Alex"), use high confidence (0.85-0.95).
 - For preferences ("I love Python"), use high confidence (0.85-0.95).
 - For hedged statements ("I might try Rust"), use lower confidence (0.40-0.60).
@@ -228,7 +232,7 @@ class ExtractionPipeline:
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm = llm_client
 
-    def extract(self, message: str) -> ExtractionResult:
+    async def extract(self, message: str) -> ExtractionResult:
         """Extract entities and relations from a user message.
 
         Args:
@@ -242,7 +246,7 @@ class ExtractionPipeline:
         start = time.monotonic()
 
         try:
-            raw_response = self._llm.extract(EXTRACTION_SYSTEM_PROMPT, message)
+            raw_response = await self._llm.extract(EXTRACTION_SYSTEM_PROMPT, message)
         except LLMError as e:
             log.error("extraction.llm_error", error=str(e))
             return ExtractionResult(
@@ -290,16 +294,25 @@ def _parse_entities(raw_entities: list[Any]) -> list[ExtractedEntity]:
         entity_type = item.get("entity_type", "concept")
         if not name or not isinstance(name, str):
             continue
+        props = item.get("properties", {})
+        if isinstance(props, dict):
+            # Strip keys that duplicate top-level fields
+            props = {k: v for k, v in props.items()
+                     if k not in ("name", "entity_type")}
+        else:
+            props = {}
         entities.append(ExtractedEntity(
             name=name,
             entity_type=entity_type,
-            properties=item.get("properties", {}),
+            properties=props,
         ))
     return entities
 
 
-def _parse_relations(raw_relations: list[Any]) -> list[ExtractedRelation]:
+def _parse_relations(raw_relations: list[Any] | None) -> list[ExtractedRelation]:
     """Parse raw relation dicts into ExtractedRelation objects, skipping malformed ones."""
+    if not raw_relations:
+        return []
     relations = []
     for item in raw_relations:
         if not isinstance(item, dict):
@@ -312,12 +325,19 @@ def _parse_relations(raw_relations: list[Any]) -> list[ExtractedRelation]:
             continue
         # Clamp confidence to [0.0, 1.0]
         confidence = max(0.0, min(1.0, float(confidence)))
+        props = item.get("properties", {})
+        if isinstance(props, dict):
+            # Strip keys that duplicate top-level fields
+            props = {k: v for k, v in props.items()
+                     if k not in ("source", "target", "relation", "confidence")}
+        else:
+            props = {}
         relations.append(ExtractedRelation(
             source=source,
             target=target,
             relation=relation,
             confidence=confidence,
-            properties=item.get("properties", {}),
+            properties=props,
         ))
     return relations
 

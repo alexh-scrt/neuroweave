@@ -1,8 +1,5 @@
 """Smoke test — validates that the package installs, imports, and core wiring works."""
 
-import os
-from unittest.mock import patch
-
 import neuroweave
 from neuroweave.extraction.llm_client import MockLLMClient
 from neuroweave.extraction.pipeline import ExtractionPipeline
@@ -14,7 +11,7 @@ def test_version():
     assert neuroweave.__version__ == "0.1.0"
 
 
-def test_process_message_wiring():
+async def test_process_message_wiring():
     """The core loop — message → extraction → graph — works end to end."""
     mock = MockLLMClient()
     mock.set_response("i love python", {
@@ -30,7 +27,7 @@ def test_process_message_wiring():
     pipeline = ExtractionPipeline(mock)
     store = GraphStore()
 
-    stats = process_message("I love Python", pipeline, store)
+    stats = await process_message("I love Python", pipeline, store)
 
     assert stats["entities_extracted"] == 2
     assert stats["relations_extracted"] == 1

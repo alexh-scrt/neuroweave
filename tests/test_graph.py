@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import queue
+import asyncio
 
 import pytest
 
@@ -230,7 +230,7 @@ class TestEventEmission:
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="a"))
 
     def test_node_added_event(self, store: GraphStore):
-        q: queue.Queue[GraphEvent] = queue.Queue()
+        q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
@@ -241,7 +241,7 @@ class TestEventEmission:
         assert event.data["name"] == "Alex"
 
     def test_node_updated_event(self, store: GraphStore):
-        q: queue.Queue[GraphEvent] = queue.Queue()
+        q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
@@ -255,7 +255,7 @@ class TestEventEmission:
         assert events[1].event_type == GraphEventType.NODE_UPDATED
 
     def test_edge_added_event(self, store: GraphStore):
-        q: queue.Queue[GraphEvent] = queue.Queue()
+        q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
         store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))

@@ -13,34 +13,40 @@
 </p>
 
 <p align="center">
+  <a href="#installation">Installation</a> •
   <a href="#quickstart">Quickstart</a> •
+  <a href="https://neuroweave.readthedocs.io">Documentation</a> •
   <a href="ARCHITECTURE.md">Architecture</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#configuration">Configuration</a> •
-  <a href="#testing">Testing</a> •
-  <a href="#vision">Vision</a>
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square" alt="Python 3.11+"></a>
-  <a href="https://github.com/user/neuroweave/blob/master/LICENSE"><img src="https://img.shields.io/github/license/user/neuroweave?style=flat-square" alt="License"></a>
+  <a href="https://neuroweave.readthedocs.io"><img src="https://img.shields.io/badge/docs-readthedocs-blue?style=flat-square" alt="Docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License"></a>
+  <a href="https://pypi.org/project/neuroweave/"><img src="https://img.shields.io/pypi/v/neuroweave?style=flat-square" alt="PyPI"></a>
 </p>
 
 ---
 
 ## What This Is
 
-NeuroWeave transforms AI conversations into a **live knowledge graph**. As a user chats, an LLM extracts entities and relationships from each message. Those are materialized into a graph that grows over time. A browser-based visualizer shows the graph building in real time.
+NeuroWeave is an async Python library that transforms AI conversations into a **live knowledge graph**. As a user chats with an AI agent, NeuroWeave extracts entities and relationships from each message, materializes them into a graph, and lets the agent query that graph to recall facts, preferences, and connections.
 
-This POC proves the core loop: **conversation → extraction → graph → visualization**.
+```python
+from neuroweave import NeuroWeave
 
+async with NeuroWeave(llm_provider="anthropic") as nw:
+    # Agent feeds user messages — graph builds automatically
+    await nw.process("My wife Lena and I are going to Tokyo in March")
+    await nw.process("She loves sushi but I prefer ramen")
+
+    # Query for relevant context
+    result = await nw.query("what does my wife like?")
+    # → nodes: [Lena, sushi]  edges: [Lena --prefers--> sushi]
 ```
-You: My wife Lena and I are going to Tokyo in March
-  → Extracted 3 entities, 3 relations (47ms)
-  → Graph: 5 nodes, 4 edges (+2 nodes, +3 edges)
-```
 
-Open `http://localhost:8787` and watch the graph appear:
+Open `http://localhost:8787` to watch the graph build in real time:
 
 ```mermaid
 graph LR
@@ -48,9 +54,9 @@ graph LR
     User -->|traveling_to| Tokyo((Tokyo))
     Lena -->|traveling_to| Tokyo
     User -->|named| Alex((Alex))
-    User -->|prefers| Python((Python))
-    Lena -->|prefers| sushi((sushi))
     User -->|prefers| ramen((ramen))
+    Lena -->|prefers| sushi((sushi))
+    User -->|experienced_with| Python((Python))
     User -->|has_children| children((children))
 
     style User fill:#6c63ff,color:#fff
@@ -65,72 +71,134 @@ graph LR
 
 ---
 
-## Quickstart
-
-### Prerequisites
-
-- Python 3.11+
-- An Anthropic API key (or use mock mode for zero-cost testing)
-
-### Install
+## Installation
 
 ```bash
-git clone https://github.com/user/neuroweave.git
+pip install neuroweave
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/neuroweave/neuroweave.git
 cd neuroweave
-make install
-```
-
-### Run with a real LLM
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-make run
-```
-
-### Run with mock LLM (no API key needed)
-
-```bash
-NEUROWEAVE_LLM_PROVIDER=mock make run
-```
-
-### Open the visualizer
-
-Navigate to [http://127.0.0.1:8787](http://127.0.0.1:8787) in your browser. The graph updates live as you chat in the terminal.
-
-### Run the tests
-
-```bash
-make test           # All ~136 tests
-make test-e2e       # Just the proof: conversation → graph
-make test-cov       # With coverage report
+make install    # pip install -e ".[dev]"
 ```
 
 ---
 
-## How It Works
+## Quickstart
 
-Each message flows through four stages:
+### As a Library (recommended)
 
-```mermaid
-graph LR
-    A[User Message] --> B[Extraction Pipeline]
-    B --> C[Ingestion Bridge]
-    C --> D[Graph Store]
-    D --> E[Visualization Server]
+```python
+import asyncio
+from neuroweave import NeuroWeave
 
-    style D fill:#6c63ff,stroke:#4a44b3,color:#fff
-    style E fill:#fbbf24,stroke:#d97706,color:#000
+async def main():
+    async with NeuroWeave(
+        llm_provider="anthropic",
+        llm_api_key="sk-ant-...",
+    ) as nw:
+        # Write path — extract knowledge, update the graph
+        result = await nw.process("My wife Lena loves Malbec")
+        print(f"Extracted {result.entity_count} entities")
+
+        # Read path — structured query
+        result = await nw.query(["Lena"], relations=["prefers"], max_hops=1)
+        print(result.node_names())  # ['Lena', 'Malbec']
+
+        # Read path — natural language (LLM translates to graph query)
+        result = await nw.query("what does my wife like?")
+
+        # Combined — process + query in one call (primary agent integration)
+        context = await nw.get_context("remind me about dinner")
+        print(context.relevant.node_names())
+
+asyncio.run(main())
 ```
 
-**1. Extraction Pipeline** — sends the message plus a system prompt to an LLM (Claude Haiku in production, mock in tests). The LLM returns structured JSON with entities and relations. A JSON repair layer handles common LLM output issues (markdown fences, trailing commas, truncated output). The pipeline **never raises** — failures return an empty result.
+### Mock Mode (no API key needed)
 
-**2. Ingestion Bridge** — translates extracted entities into graph nodes and relations into edges. Deduplicates by name (case-insensitive) so "User" from message 1 and "user" from message 5 are the same node. Skips edges that reference unknown entities.
+```python
+async with NeuroWeave(llm_provider="mock") as nw:
+    ...
+```
 
-**3. Graph Store** — a NetworkX `MultiDiGraph` that supports parallel directed edges (Alex →married_to→ Lena AND Alex →works_with→ Lena). Every mutation emits a `GraphEvent` to a thread-safe queue. The interface is designed so swapping to Neo4j later changes only the implementation, not the callers.
+### As a CLI
 
-**4. Visualization Server** — FastAPI serves a Cytoscape.js single-page app. On connect, the browser receives the full graph snapshot. As new nodes and edges are added, the server pushes them via WebSocket. The graph re-layouts with animation.
+```bash
+# With real LLM
+export NEUROWEAVE_LLM_API_KEY=sk-ant-...
+neuroweave
 
-For the full component breakdown, sequence diagrams, data model, thread model, and design decisions, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+# With mock LLM (no API key needed)
+NEUROWEAVE_LLM_PROVIDER=mock neuroweave
+```
+
+### Demo Agent
+
+```bash
+python examples/demo_agent.py              # Canned demo (mock, no API key)
+python examples/demo_agent.py -i           # Interactive mode
+python examples/demo_agent.py --provider anthropic  # With real LLM
+```
+
+---
+
+## API Overview
+
+### Three Methods
+
+| Method | Purpose | Returns |
+|--------|---------|---------|
+| `process(message)` | Extract knowledge, update graph | `ProcessResult` |
+| `query(...)` | Query the graph (structured or NL) | `QueryResult` |
+| `get_context(message)` | Process + query combined | `ContextResult` |
+
+### Event Subscription
+
+```python
+from neuroweave import EventType
+
+async def on_new_entity(event):
+    print(f"Discovered: {event.data['name']}")
+
+nw.subscribe(on_new_entity, event_types={EventType.NODE_ADDED})
+```
+
+### Visualization
+
+```python
+nw = NeuroWeave(enable_visualization=True, server_port=8787)
+# Graph visible at http://127.0.0.1:8787 with WebSocket live updates
+```
+
+Full documentation: **[neuroweave.readthedocs.io](https://neuroweave.readthedocs.io)**
+
+---
+
+## Configuration
+
+Three-tier system: **field defaults → YAML → environment variables** (highest priority).
+
+```yaml
+# config/default.yaml
+llm_provider: "anthropic"
+llm_model: "claude-haiku-4-5-20251001"
+graph_backend: "memory"
+server_host: "127.0.0.1"
+server_port: 8787
+log_level: "INFO"
+log_format: "console"
+```
+
+```bash
+# Environment variable overrides
+NEUROWEAVE_LLM_PROVIDER=mock
+NEUROWEAVE_LLM_API_KEY=sk-ant-...
+NEUROWEAVE_LOG_FORMAT=json
+```
 
 ---
 
@@ -139,182 +207,72 @@ For the full component breakdown, sequence diagrams, data model, thread model, a
 ```
 neuroweave/
 ├── src/neuroweave/
-│   ├── __init__.py              # Package root, version
-│   ├── main.py                  # Entry point: config → LLM → pipeline → graph → server → loop
-│   ├── config.py                # Pydantic settings: YAML + env vars + validation
-│   ├── logging.py               # structlog: console (dev) or JSON (prod) output
+│   ├── __init__.py              # Public exports: NeuroWeave, ProcessResult, ...
+│   ├── api.py                   # NeuroWeave facade class (the public API)
+│   ├── config.py                # Pydantic settings: YAML + env vars
+│   ├── events.py                # EventBus async pub/sub
+│   ├── logging.py               # structlog: console or JSON output
+│   ├── main.py                  # CLI entry point
 │   ├── extraction/
-│   │   ├── __init__.py
-│   │   ├── llm_client.py        # LLMClient protocol + Mock + Anthropic implementations
-│   │   └── pipeline.py          # Message → ExtractionResult (entities + relations)
+│   │   ├── llm_client.py        # LLMClient protocol + Mock + Anthropic
+│   │   └── pipeline.py          # Message → ExtractionResult
 │   ├── graph/
-│   │   ├── __init__.py
-│   │   ├── store.py             # NetworkX graph + event emission + query interface
-│   │   └── ingest.py            # ExtractionResult → graph nodes and edges
+│   │   ├── store.py             # NetworkX graph + event emission
+│   │   ├── ingest.py            # ExtractionResult → graph nodes and edges
+│   │   ├── query.py             # Structured query engine
+│   │   └── nl_query.py          # NL → structured query via LLM
 │   └── server/
-│       ├── __init__.py
-│       └── app.py               # FastAPI: REST + WebSocket + static file serving
-├── tests/
-│   ├── conftest.py              # Shared fixtures: config, logging, mock LLM corpus
-│   ├── test_smoke.py            # 2 tests — package imports, wiring
-│   ├── test_config.py           # 9 tests — defaults, YAML, env, validation
-│   ├── test_logging.py          # 8 tests — console, JSON, filtering, binding
-│   ├── test_graph.py            # 30 tests — nodes, edges, neighbors, events, factories
-│   ├── test_extraction.py       # 30 tests — JSON repair, mock LLM, entities, resilience
-│   ├── test_ingest.py           # 13 tests — dedup, type mapping, cross-message growth
-│   ├── test_server.py           # 10 tests — REST, WebSocket, health
-│   ├── test_e2e.py              # 22 tests — THE POC PROOF ★
-│   └── test_live_updates.py     # 12 tests — event emission, server reflects graph
-├── static/
-│   └── index.html               # Cytoscape.js visualizer (single file, no build step)
-├── config/
-│   └── default.yaml             # Checked-in default configuration
-├── pyproject.toml               # Build config, 9 core + 5 dev dependencies
-├── Makefile                     # install, test, lint, run, clean
-├── ARCHITECTURE.md              # Detailed technical architecture
-├── IMPLEMENTATION_PLAN.md       # 9-step build plan (completed)
-└── .gitignore
+│       └── app.py               # FastAPI: REST + WebSocket + Cytoscape.js
+├── tests/                       # ~308 tests across 16 files
+├── examples/
+│   └── demo_agent.py            # Self-contained demo agent
+├── docs/                        # MkDocs documentation (readthedocs.io)
+├── config/default.yaml
+├── static/index.html            # Cytoscape.js visualizer
+├── pyproject.toml
+├── mkdocs.yml
+├── .readthedocs.yaml
+├── LICENSE                      # Apache 2.0
+└── CHANGELOG.md
 ```
-
----
-
-## Configuration
-
-NeuroWeave uses a three-tier configuration system: **field defaults → YAML → environment variables** (highest priority).
-
-### `config/default.yaml`
-
-```yaml
-llm_provider: "anthropic"
-llm_model: "claude-haiku-4-5-20251001"
-extraction_enabled: true
-extraction_confidence_threshold: 0.3
-graph_backend: "memory"
-server_host: "127.0.0.1"
-server_port: 8787
-log_level: "INFO"
-log_format: "console"
-```
-
-### Environment variable overrides
-
-All fields can be overridden with `NEUROWEAVE_` prefixed env vars:
-
-```bash
-NEUROWEAVE_LLM_PROVIDER=mock          # Use mock LLM (no API key needed)
-NEUROWEAVE_LOG_FORMAT=json             # JSON logs for production
-NEUROWEAVE_SERVER_PORT=9000            # Different port
-ANTHROPIC_API_KEY=sk-ant-...           # API key (also reads NEUROWEAVE_LLM_API_KEY)
-```
-
-### Key settings
-
-| Setting | Values | Default | Purpose |
-|---------|--------|---------|---------|
-| `llm_provider` | `anthropic`, `openai`, `mock` | `anthropic` | Which LLM to use for extraction |
-| `llm_model` | any model string | `claude-haiku-4-5-20251001` | Model for extraction calls |
-| `graph_backend` | `memory` | `memory` | Graph storage (NetworkX). Neo4j planned. |
-| `log_format` | `console`, `json` | `console` | Colored dev output or machine-parseable JSON |
-| `extraction_confidence_threshold` | 0.0–1.0 | 0.3 | Minimum confidence to store a relation |
 
 ---
 
 ## Testing
 
-### Test suite summary
-
-| File | Tests | What it proves |
-|------|-------|----------------|
-| `test_smoke.py` | 2 | Package installs, core wiring works |
-| `test_config.py` | 9 | Defaults, YAML override, env override, validation rejects bad input |
-| `test_logging.py` | 8 | Console and JSON output, log level filtering, context binding |
-| `test_graph.py` | 30 | Node/edge CRUD, neighbor traversal, serialization, event emission |
-| `test_extraction.py` | 30 | JSON repair (8 scenarios), mock LLM matching, entity/relation parsing, resilience |
-| `test_ingest.py` | 13 | Deduplication, type mapping, unknown entity handling, incremental growth |
-| `test_server.py` | 10 | REST endpoints, WebSocket snapshot, health check |
-| **`test_e2e.py`** | **22** | **★ The POC proof: 5-message conversation → correctly structured graph** |
-| `test_live_updates.py` | 12 | Events emitted to queue, server reflects graph, incremental API growth |
-
-### The POC proof — `test_e2e.py`
-
-This is the single most important test file. It feeds a 5-message conversation:
-
-```
-1. "My name is Alex and I'm a software engineer"
-2. "My wife Lena and I are going to Tokyo in March"
-3. "She loves sushi but I prefer ramen"
-4. "We have two kids, both in elementary school"
-5. "I've been using Python for 10 years"
-```
-
-...through the full pipeline and asserts:
-
-- The graph contains ≥8 nodes (Alex, Lena, User, Tokyo, Python, sushi, ramen, children)
-- The graph contains ≥8 edges (named, married_to, traveling_to, prefers, has_children, experienced_with)
-- Relationships have correct types and confidence scores (explicit facts ≥ 0.85)
-- No orphan edges (every edge connects two existing nodes)
-- User is the central node (most connected)
-- The graph grows monotonically — never shrinks between messages
-
-### Make targets
-
 ```bash
-make test           # All tests
-make test-unit      # Unit tests only
-make test-e2e       # E2E proof only
+make test           # All ~308 tests
 make test-cov       # With coverage report
 make lint           # Ruff linting
-make format         # Ruff auto-format
+make format         # Auto-format
 ```
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `test_smoke.py` | 2 | Package imports, wiring |
+| `test_config.py` | 9 | Defaults, YAML, env overrides |
+| `test_logging.py` | 8 | Console/JSON output, filtering |
+| `test_graph.py` | 30 | Node/edge CRUD, events, factories |
+| `test_extraction.py` | 30 | JSON repair, mock LLM, resilience |
+| `test_ingest.py` | 13 | Dedup, type mapping, growth |
+| `test_server.py` | 10 | REST, WebSocket, health |
+| `test_e2e.py` | 22 | Full POC proof: 5-msg → graph |
+| `test_live_updates.py` | 12 | Event emission, server reflects graph |
+| `test_query.py` | 37 | Structured queries, hop traversal |
+| `test_nl_query.py` | 38 | NL query planner, parsing, fallback |
+| `test_events.py` | 33 | EventBus lifecycle, timeout, errors |
+| `test_api.py` | 36 | Facade lifecycle, process, query |
+| `test_integration.py` | 28 | Full end-to-end with corpus |
 
 ---
 
 ## Dependencies
 
-### Core (9 packages)
+**Core:** anthropic ≥0.42, networkx ≥3.2, fastapi ≥0.115, structlog ≥25.5, pydantic-settings ≥2.7, uvicorn ≥0.34, websockets ≥16.0, pyyaml ≥6.0
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `anthropic` | ≥0.42 | Claude API client for extraction |
-| `networkx` | ≥3.2 | In-memory knowledge graph |
-| `pydantic-settings` | ≥2.7 | Typed configuration with validation |
-| `structlog` | ≥25.5 | Structured logging (console + JSON) |
-| `fastapi` | ≥0.115 | REST + WebSocket server |
-| `uvicorn[standard]` | ≥0.34 | ASGI server |
-| `websockets` | ≥16.0 | WebSocket protocol support |
-| `pyyaml` | ≥6.0 | YAML config file parsing |
+**Dev:** pytest, pytest-asyncio, pytest-cov, httpx, ruff
 
-### Dev (5 packages)
-
-| Package | Purpose |
-|---------|---------|
-| `pytest` | Test framework |
-| `pytest-asyncio` | Async test support |
-| `pytest-cov` | Coverage reporting |
-| `httpx` | FastAPI TestClient backend |
-| `ruff` | Linting + formatting |
-
----
-
-## Vision
-
-This POC validates the core concept. The full NeuroWeave system adds:
-
-| Capability | POC | Production |
-|------------|-----|------------|
-| Input | Terminal | MCP tools for any agent runtime |
-| Extraction | Single LLM call | 7-stage pipeline (entity → relation → sentiment → temporal → confidence → graph diff) |
-| Graph | NetworkX in-memory | Neo4j with Cypher |
-| Events | `queue.Queue` | Redis Streams |
-| Vectors | — | Qdrant for episode similarity search |
-| Background | — | Revision workers, confidence decay, inference chains |
-| Proactive | — | Contextual probes, conversation starters, anticipatory suggestions |
-| Privacy | — | L0–L4 classification, PII detection, GDPR compliance, CVM deployment |
-| Sharing | — | Differential privacy, cross-agent experience transfer |
-
-The interfaces are designed for this evolution. `GraphStore` methods map to Neo4j Cypher. The `LLMClient` protocol accepts any backend. `ExtractionPipeline.extract()` returns the same type whether it's one LLM call or seven stages.
-
-For the full production architecture, see the [design documents](docs/) and [ARCHITECTURE.md](ARCHITECTURE.md).
+**Docs:** mkdocs-material, mkdocstrings
 
 ---
 
