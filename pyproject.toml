@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "neuroweave"
+name = "neuroweave-python"
 version = "0.1.0"
 description = "Real-time knowledge graph memory for agentic AI platforms"
 readme = "README.md"
@@ -66,11 +66,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/neuroweave/neuroweave"
+Homepage = "https://github.com/alexh-scrt/neuroweave"
 Documentation = "https://neuroweave.readthedocs.io"
-Repository = "https://github.com/neuroweave/neuroweave"
-Changelog = "https://github.com/neuroweave/neuroweave/blob/main/CHANGELOG.md"
-Issues = "https://github.com/neuroweave/neuroweave/issues"
+Repository = "https://github.com/alexh-scrt/neuroweave"
+Changelog = "https://github.com/alexh-scrt/neuroweave/blob/main/CHANGELOG.md"
+Issues = "https://github.com/alexh-scrt/neuroweave/issues"
 
 [project.scripts]
 neuroweave = "neuroweave.main:main"

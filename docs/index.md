@@ -61,13 +61,13 @@ asyncio.run(main())
 ## Installation
 
 ```bash
-pip install neuroweave
+pip install neuroweave-python
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/neuroweave/neuroweave.git
+git clone https://github.com/alexh-scrt/neuroweave.git
 cd neuroweave
 pip install -e ".[dev]"
 ```

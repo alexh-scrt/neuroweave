@@ -1,7 +1,7 @@
 # Architecture
 
 For the full technical architecture document, see the
-[ARCHITECTURE.md](https://github.com/neuroweave/neuroweave/blob/main/ARCHITECTURE.md)
+[ARCHITECTURE.md](https://github.com/alexh-scrt/neuroweave/blob/main/ARCHITECTURE.md)
 file in the repository root.
 
 ## System Overview
@@ -78,7 +78,7 @@ FastAPI serves a Cytoscape.js single-page app with WebSocket live updates.
 
 Additional design documents are available in the repository:
 
-- [Experience Memory Architecture](https://github.com/neuroweave/neuroweave/blob/main/docs/design/em_arch_overview.md)
-- [Experience Memory Integration](https://github.com/neuroweave/neuroweave/blob/main/docs/design/em_integration.md)
-- [Experience Memory Pre-Design](https://github.com/neuroweave/neuroweave/blob/main/docs/design/em_pre_design.md)
-- [Experience Memory System](https://github.com/neuroweave/neuroweave/blob/main/docs/design/experience_memory.md)
+- [Experience Memory Architecture](https://github.com/alexh-scrt/neuroweave/blob/main/docs/design/em_arch_overview.md)
+- [Experience Memory Integration](https://github.com/alexh-scrt/neuroweave/blob/main/docs/design/em_integration.md)
+- [Experience Memory Pre-Design](https://github.com/alexh-scrt/neuroweave/blob/main/docs/design/em_pre_design.md)
+- [Experience Memory System](https://github.com/alexh-scrt/neuroweave/blob/main/docs/design/experience_memory.md)

@@ -1,6 +1,6 @@
 # Changelog
 
-For the full changelog, see [CHANGELOG.md](https://github.com/neuroweave/neuroweave/blob/main/CHANGELOG.md) in the repository.
+For the full changelog, see [CHANGELOG.md](https://github.com/alexh-scrt/neuroweave/blob/main/CHANGELOG.md) in the repository.
 
 ## [0.1.0] — 2026-02-17
 

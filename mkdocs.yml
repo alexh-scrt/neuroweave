@@ -1,8 +1,8 @@
 site_name: NeuroWeave
 site_description: Real-time knowledge graph memory for agentic AI platforms
 site_url: https://neuroweave.readthedocs.io
-repo_url: https://github.com/neuroweave/neuroweave
-repo_name: neuroweave/neuroweave
+repo_url: https://github.com/alexh-scrt/neuroweave
+repo_name: alexh-scrt/neuroweave
 edit_uri: edit/main/docs/
 
 theme:
@@ -101,4 +101,4 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/neuroweave/neuroweave
+      link: https://github.com/alexh-scrt/neuroweave

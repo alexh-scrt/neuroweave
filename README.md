@@ -24,7 +24,7 @@
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square" alt="Python 3.11+"></a>
   <a href="https://neuroweave.readthedocs.io"><img src="https://img.shields.io/badge/docs-readthedocs-blue?style=flat-square" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License"></a>
-  <a href="https://pypi.org/project/neuroweave/"><img src="https://img.shields.io/pypi/v/neuroweave?style=flat-square" alt="PyPI"></a>
+  <a href="https://pypi.org/project/neuroweave-python/"><img src="https://img.shields.io/pypi/v/neuroweave-python?style=flat-square" alt="PyPI"></a>
 </p>
 
 ---
@@ -74,13 +74,13 @@ graph LR
 ## Installation
 
 ```bash
-pip install neuroweave
+pip install neuroweave-python
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/neuroweave/neuroweave.git
+git clone https://github.com/alexh-scrt/neuroweave.git
 cd neuroweave
 make install    # pip install -e ".[dev]"
 ```

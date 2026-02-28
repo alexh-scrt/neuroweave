@@ -12,13 +12,13 @@ This guide walks you through installing NeuroWeave, configuring an LLM backend, 
 ### From PyPI
 
 ```bash
-pip install neuroweave
+pip install neuroweave-python
 ```
 
 ### From Source (development)
 
 ```bash
-git clone https://github.com/neuroweave/neuroweave.git
+git clone https://github.com/alexh-scrt/neuroweave.git
 cd neuroweave
 pip install -e ".[dev]"
 ```
@@ -43,7 +43,7 @@ asyncio.run(main())
 !!! note
     The mock LLM returns empty extractions for unknown messages. Register
     canned responses for deterministic testing — see the
-    [demo agent](https://github.com/neuroweave/neuroweave/blob/main/examples/demo_agent.py)
+    [demo agent](https://github.com/alexh-scrt/neuroweave/blob/main/examples/demo_agent.py)
     for an example.
 
 ### Option 2: With Anthropic Claude
