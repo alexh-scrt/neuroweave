@@ -5,6 +5,82 @@ All notable changes to NeuroWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-04-03
+
+### Summary
+
+Major feature release adding persistent storage backends, scientific knowledge graph
+support, bulk document ingestion, vector search integration, and cross-session
+entity deduplication.
+
+### Added
+
+**NW-001 — Persistent Graph Backend (Neo4j)**
+
+- `AbstractGraphStore` ABC — common interface for all graph backends.
+- `MemoryGraphStore` — existing in-memory backend, now extends `AbstractGraphStore`.
+- `Neo4jGraphStore` — persistent graph backend using Neo4j (optional dependency).
+- `_build_graph_store()` factory in API — selects backend from `graph_backend` config.
+- Neo4j config fields: `neo4j_uri`, `neo4j_user`, `neo4j_password`, `neo4j_database`.
+- `GraphBackend` enum extended with `NEO4J` and `POSTGRESQL` (reserved).
+
+**NW-002 — Scientific Entity Schema**
+
+- 12 new `NodeType` values: `THEOREM`, `LEMMA`, `CONJECTURE`, `PROOF`, `DEFINITION`,
+  `EXAMPLE`, `PAPER`, `AUTHOR`, `DOMAIN`, `MATH_OBJECT`, `OPEN_PROBLEM`, `ALGORITHM`.
+- `RelationType` enum with 18 typed scientific relations (e.g. `PROVES`, `CITES`,
+  `FOLLOWS_FROM`, `BELONGS_TO`).
+- Scientific extraction prompt (`_SCIENTIFIC_SYSTEM_PROMPT`) for mathematical text.
+- `ExtractionPipeline` now accepts `mode` parameter (`"general"` | `"scientific"`).
+- `query_by_type()` — query all nodes of a given type with optional relation filter.
+- `get_proof_chain()` — traverse theorem dependency chains.
+- `get_domain_graph()` — retrieve all entities belonging to a mathematical domain.
+- `extraction_mode` config field.
+
+**NW-003 — Bulk Document Ingestion**
+
+- `DocumentIngester` — chunks full documents and extracts concurrently.
+- `ChunkStrategy` enum: `PARAGRAPH`, `FIXED`, `SECTION`, `SENTENCE`.
+- `DocumentIngestionResult` — result with entity/relation counts and timing.
+- `NeuroWeave.ingest_document()` facade method.
+- Short chunk merging to avoid tiny extraction windows.
+
+**NW-004 — Qdrant Integration Bridge**
+
+- `QdrantBridge` — combines graph traversal with Qdrant vector similarity search.
+- `VectorContextResult` — merged result from graph + vector with deduplicated names.
+- `NeuroWeave.get_context_with_vectors()` facade method.
+- Concurrent graph + vector search via `asyncio.gather()`.
+- `upsert_node_vectors()` — store node embeddings in Qdrant.
+- Optional dependency: `qdrant-client>=1.9`.
+
+**NW-005 — Node Merge / Deduplication**
+
+- Cross-session entity deduplication via `_resolve_entity_name()`.
+- `update_node_properties()` — merge new properties into existing nodes (new wins).
+- Property merging on entity reuse during ingestion.
+- `NODE_UPDATED` events emitted on property merge.
+
+**NW-006 — Configuration & Exports**
+
+- All new public symbols exported from `neuroweave.__init__` and `__all__`.
+- Updated `config/default.yaml` with all new fields.
+- Optional dependency groups: `neo4j`, `qdrant`.
+
+### Changed
+
+- `ExtractionPipeline.__init__` now accepts `mode` and `confidence_threshold` parameters.
+- `ingest_extraction()` uses cross-session dedup (queries persistent store).
+- Entity type mapping extended with all scientific types.
+
+### Testing
+
+- 377 tests total (313 original + 64 new) across 20 test files.
+- New test files: `test_neo4j_backend.py`, `test_scientific_schema.py`,
+  `test_document_ingestion.py`, `test_qdrant_bridge.py`, `test_deduplication.py`.
+
+---
+
 ## [0.1.0] — 2026-02-17
 
 ### Summary

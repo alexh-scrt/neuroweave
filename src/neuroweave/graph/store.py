@@ -26,11 +26,57 @@ log = get_logger("graph")
 # ---------------------------------------------------------------------------
 
 class NodeType(str, Enum):
+    # --- existing ---
     ENTITY = "entity"
     CONCEPT = "concept"
     PREFERENCE = "preference"
     EPISODE = "episode"
     EXPERIENCE = "experience"
+
+    # --- scientific types ---
+    THEOREM = "theorem"
+    LEMMA = "lemma"
+    CONJECTURE = "conjecture"
+    PROOF = "proof"
+    DEFINITION = "definition"
+    EXAMPLE = "example"
+    PAPER = "paper"
+    AUTHOR = "author"
+    DOMAIN = "domain"
+    MATH_OBJECT = "math_object"
+    OPEN_PROBLEM = "open_problem"
+    ALGORITHM = "algorithm"
+
+
+class RelationType(str, Enum):
+    """Typed relations for scientific knowledge graphs."""
+
+    # Proof relationships
+    PROVES = "proves"
+    FOLLOWS_FROM = "follows_from"
+    USES = "uses"
+    CONTRADICTS = "contradicts"
+
+    # Structural relationships
+    GENERALIZES = "generalizes"
+    IS_SPECIAL_CASE = "is_special_case"
+    EQUIVALENT_TO = "equivalent_to"
+    IS_PART_OF = "is_part_of"
+
+    # Domain relationships
+    BELONGS_TO = "belongs_to"
+    APPLIES_TO = "applies_to"
+
+    # Authorship / provenance
+    AUTHORED_BY = "authored_by"
+    PUBLISHED_IN = "published_in"
+    CITES = "cites"
+    BUILDS_ON = "builds_on"
+
+    # Research status
+    VERIFIED_BY = "verified_by"
+    REJECTED_BY = "rejected_by"
+    OPEN_SINCE = "open_since"
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +338,19 @@ def make_node(
         node_type=node_type,
         properties=properties,
     )
+
+
+def update_node_properties(store: GraphStore, node_id: str, properties: dict[str, Any]) -> None:
+    """Standalone helper to merge properties on a GraphStore node."""
+    if node_id not in store._graph.nodes:
+        return
+    existing = store._graph.nodes[node_id].get("properties", {})
+    merged = {**existing, **properties}
+    store._graph.nodes[node_id]["properties"] = merged
+    store._emit(GraphEvent(
+        event_type=GraphEventType.NODE_UPDATED,
+        data={"id": node_id, "properties": merged},
+    ))
 
 
 def make_edge(

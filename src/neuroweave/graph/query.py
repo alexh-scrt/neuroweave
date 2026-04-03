@@ -16,7 +16,7 @@ from typing import Any
 
 import networkx as nx
 
-from neuroweave.graph.store import GraphStore
+from neuroweave.graph.store import GraphStore, NodeType
 from neuroweave.logging import get_logger
 
 log = get_logger("query")
@@ -201,3 +201,80 @@ def _resolve_entity_names(store: GraphStore, names: list[str]) -> list[str]:
                 seen.add(nid)
 
     return resolved
+
+
+# ---------------------------------------------------------------------------
+# Typed query helpers (NW-002)
+# ---------------------------------------------------------------------------
+
+
+def query_by_type(
+    store: GraphStore,
+    entity_type: NodeType,
+    relations: list[str] | None = None,
+    max_hops: int = 1,
+) -> QueryResult:
+    """Return all nodes of the given type, optionally filtered by relation.
+
+    Example:
+        query_by_type(store, NodeType.THEOREM, relations=["proves"])
+    """
+    nodes = store.find_nodes(node_type=entity_type)
+    if not nodes:
+        return QueryResult(nodes=[], edges=[])
+    node_ids = {n["id"] for n in nodes}
+    all_edges = []
+    for node_id in node_ids:
+        edges = store.get_edges(source_id=node_id)
+        if relations:
+            edges = [e for e in edges if e.get("relation") in relations]
+        all_edges.extend(edges)
+    return QueryResult(nodes=nodes, edges=all_edges)
+
+
+def get_proof_chain(
+    store: GraphStore,
+    theorem_name: str,
+    max_hops: int = 3,
+) -> QueryResult:
+    """Return the full dependency chain for a theorem: theorem -> lemmas -> definitions.
+
+    Traverses USES, FOLLOWS_FROM, and PROVES relations up to max_hops deep.
+    """
+    proof_relations = {"uses", "follows_from", "proves", "verified_by"}
+    nodes = store.find_nodes(name_contains=theorem_name)
+    if not nodes:
+        return QueryResult(nodes=[], edges=[])
+    root_id = nodes[0]["id"]
+    neighbors = store.get_neighbors(root_id, depth=max_hops)
+    all_edges = store.get_edges()
+    relevant_ids = {root_id} | {n["id"] for n in neighbors}
+    relevant_edges = [
+        e for e in all_edges
+        if e.get("source_id") in relevant_ids
+        and e.get("target_id") in relevant_ids
+        and e.get("relation") in proof_relations
+    ]
+    return QueryResult(nodes=[*nodes, *neighbors], edges=relevant_edges)
+
+
+def get_domain_graph(
+    store: GraphStore,
+    domain_name: str,
+) -> QueryResult:
+    """Return all entities belonging to a mathematical domain."""
+    domain_nodes = store.find_nodes(node_type=NodeType.DOMAIN, name_contains=domain_name)
+    if not domain_nodes:
+        return QueryResult(nodes=[], edges=[])
+    domain_ids = {n["id"] for n in domain_nodes}
+    all_edges = store.get_edges()
+    member_edges = [
+        e for e in all_edges
+        if e.get("target_id") in domain_ids and e.get("relation") == "belongs_to"
+    ]
+    member_ids = {e["source_id"] for e in member_edges}
+    member_nodes = [store.get_node(nid) for nid in member_ids if store.get_node(nid)]
+    return QueryResult(
+        nodes=[*domain_nodes, *(n for n in member_nodes if n)],
+        edges=member_edges,
+    )

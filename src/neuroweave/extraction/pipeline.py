@@ -56,7 +56,7 @@ class ExtractionResult:
 # System prompt
 # ---------------------------------------------------------------------------
 
-EXTRACTION_SYSTEM_PROMPT = """\
+_GENERAL_SYSTEM_PROMPT = """\
 You are a knowledge extraction engine. Your task is to extract entities and \
 relationships from a user's conversational message.
 
@@ -89,6 +89,48 @@ Respond with ONLY valid JSON in this exact format, no other text:
     {"source": "source entity name", "target": "target entity name", "relation": "relation_type", "confidence": 0.85, "properties": {}}
   ]
 }
+"""
+
+# Backward compat alias
+EXTRACTION_SYSTEM_PROMPT = _GENERAL_SYSTEM_PROMPT
+
+_SCIENTIFIC_SYSTEM_PROMPT = """\
+You are a scientific knowledge extraction system.
+Extract entities and relations from mathematical and scientific text.
+
+OUTPUT FORMAT — valid JSON only, no surrounding text:
+{
+  "entities": [
+    {
+      "name": "string — canonical name of the entity",
+      "entity_type": "theorem|lemma|conjecture|proof|definition|example|paper|author|domain|math_object|open_problem|algorithm|entity|concept",
+      "properties": {
+        "statement": "formal statement if this is a theorem/lemma/conjecture",
+        "domain": "mathematical subdomain e.g. Graph Theory",
+        "status": "proven|unproven|disproven|open",
+        "year": 2024,
+        "doi": "10.xxxx/yyy if known"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "source": "entity name",
+      "target": "entity name",
+      "relation": "proves|follows_from|uses|contradicts|generalizes|is_special_case|equivalent_to|is_part_of|belongs_to|applies_to|authored_by|published_in|cites|builds_on|verified_by|rejected_by",
+      "confidence": 0.0,
+      "properties": {}
+    }
+  ]
+}
+
+RULES:
+- Use specific scientific entity types (theorem, lemma, etc.) over generic ones (concept, entity)
+- "statement" property on theorems/lemmas must be the verbatim mathematical statement if present
+- Confidence 0.90-0.99 for explicitly stated facts, 0.50-0.70 for inferred relations
+- Extract the full citation as a PAPER entity if a paper is referenced
+- Empty arrays if no entities or relations are extractable
+- NEVER add explanation or preamble — pure JSON only
 """
 
 
@@ -229,8 +271,19 @@ class ExtractionPipeline:
         result = pipeline.extract("My wife's name is Lena")
     """
 
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        mode: str = "general",
+        confidence_threshold: float = 0.3,
+    ) -> None:
         self._llm = llm_client
+        self._mode = mode
+        self._threshold = confidence_threshold
+
+    @property
+    def _system_prompt(self) -> str:
+        return _SCIENTIFIC_SYSTEM_PROMPT if self._mode == "scientific" else _GENERAL_SYSTEM_PROMPT
 
     async def extract(self, message: str) -> ExtractionResult:
         """Extract entities and relations from a user message.
@@ -246,7 +299,7 @@ class ExtractionPipeline:
         start = time.monotonic()
 
         try:
-            raw_response = await self._llm.extract(EXTRACTION_SYSTEM_PROMPT, message)
+            raw_response = await self._llm.extract(self._system_prompt, message)
         except LLMError as e:
             log.error("extraction.llm_error", error=str(e))
             return ExtractionResult(

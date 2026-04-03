@@ -2,6 +2,12 @@
 
 For the full changelog, see [CHANGELOG.md](https://github.com/alexh-scrt/neuroweave/blob/main/CHANGELOG.md) in the repository.
 
+## [0.2.0] — 2026-04-03
+
+Major feature release: Neo4j persistent backend, scientific entity schema, bulk document
+ingestion, Qdrant vector search bridge, and cross-session entity deduplication.
+See [CHANGELOG.md](https://github.com/alexh-scrt/neuroweave/blob/main/CHANGELOG.md) for full details.
+
 ## [0.1.0] — 2026-02-17
 
 First public release. NeuroWeave is an async Python library that transforms AI conversations into a live knowledge graph.

@@ -8,7 +8,7 @@ from neuroweave.main import process_message
 
 
 def test_version():
-    assert neuroweave.__version__ == "0.1.0"
+    assert neuroweave.__version__ == "0.2.0"
 
 
 async def test_process_message_wiring():

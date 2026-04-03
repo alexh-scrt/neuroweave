@@ -24,6 +24,8 @@ class LogFormat(str, Enum):
 
 class GraphBackend(str, Enum):
     MEMORY = "memory"
+    NEO4J = "neo4j"
+    POSTGRESQL = "postgresql"  # reserved for future
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -63,9 +65,16 @@ class NeuroWeaveConfig(BaseSettings):
     # --- Extraction ---
     extraction_enabled: bool = True
     extraction_confidence_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    extraction_mode: str = "general"  # "general" | "scientific"
 
     # --- Graph ---
     graph_backend: GraphBackend = GraphBackend.MEMORY
+
+    # --- Neo4j ---
+    neo4j_uri: str = "neo4j://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
 
     # --- Server ---
     server_host: str = "127.0.0.1"

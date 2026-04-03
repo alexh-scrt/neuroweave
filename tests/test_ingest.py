@@ -89,22 +89,23 @@ class TestIngestRelations:
         assert stats["edges_added"] == 1
         assert store.edge_count == 1
 
-    def test_skips_unknown_source(self, store: GraphStore):
+    def test_auto_creates_unknown_source(self, store: GraphStore):
         result = _result(
             entities=[("Python", "tool")],
             relations=[("Ghost", "Python", "prefers", 0.9)],
         )
         stats = ingest_extraction(store, result)
-        assert stats["edges_skipped"] == 1
-        assert stats["edges_added"] == 0
+        assert stats["edges_added"] == 1
+        assert stats["nodes_added"] == 2  # Python + Ghost auto-created
 
-    def test_skips_unknown_target(self, store: GraphStore):
+    def test_auto_creates_unknown_target(self, store: GraphStore):
         result = _result(
             entities=[("User", "person")],
             relations=[("User", "Ghost", "prefers", 0.9)],
         )
         stats = ingest_extraction(store, result)
-        assert stats["edges_skipped"] == 1
+        assert stats["edges_added"] == 1
+        assert stats["nodes_added"] == 2  # User + Ghost auto-created
 
     def test_resolves_entities_case_insensitive(self, store: GraphStore):
         result = _result(

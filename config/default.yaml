@@ -1,23 +1,23 @@
 # NeuroWeave default configuration
-# Override any value with environment variables: NEUROWEAVE_<KEY>
-# e.g. NEUROWEAVE_LLM_PROVIDER=mock
+# Override any field via environment variable: NEUROWEAVE_{FIELD}
 
-# LLM
 llm_provider: "anthropic"
 llm_model: "claude-haiku-4-5-20251001"
 # llm_api_key: set via NEUROWEAVE_LLM_API_KEY or ANTHROPIC_API_KEY
 
-# Extraction
 extraction_enabled: true
 extraction_confidence_threshold: 0.3
+extraction_mode: "general"               # "general" | "scientific"
 
-# Graph
-graph_backend: "memory"
+graph_backend: "memory"                  # "memory" | "neo4j" | "postgresql"
 
-# Server (visualization UI)
+neo4j_uri: "neo4j://localhost:7687"
+neo4j_user: "neo4j"
+neo4j_password: ""
+neo4j_database: "neo4j"
+
 server_host: "127.0.0.1"
 server_port: 8787
 
-# Logging
 log_level: "INFO"
-log_format: "console"   # console | json
+log_format: "console"                    # "console" | "json"

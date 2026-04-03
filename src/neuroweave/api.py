@@ -21,7 +21,7 @@ from typing import Any, Awaitable, Callable
 
 import uvicorn
 
-from neuroweave.config import LLMProvider, LogFormat, NeuroWeaveConfig
+from neuroweave.config import GraphBackend, LLMProvider, LogFormat, NeuroWeaveConfig
 from neuroweave.events import EventBus
 from neuroweave.extraction.llm_client import (
     AnthropicLLMClient,
@@ -235,8 +235,12 @@ class NeuroWeave:
 
         # Core components
         llm_client = _create_llm_client(self._config)
-        self._store = GraphStore()
-        self._pipeline = ExtractionPipeline(llm_client)
+        self._store = _build_graph_store(self._config)
+        self._pipeline = ExtractionPipeline(
+            llm_client,
+            mode=self._config.extraction_mode,
+            confidence_threshold=self._config.extraction_confidence_threshold,
+        )
         self._event_bus = EventBus()
         self._nl_planner = NLQueryPlanner(llm_client, self._store)
 
@@ -380,6 +384,77 @@ class NeuroWeave:
             plan=plan,
         )
 
+    # -- Bulk ingestion -----------------------------------------------------
+
+    async def ingest_document(
+        self,
+        text: str,
+        doc_type: str = "paper",
+        metadata: dict[str, Any] | None = None,
+        chunk_strategy: str = "paragraph",
+        concurrent_chunks: int = 5,
+    ) -> Any:
+        """Ingest a full document, chunking and extracting concurrently.
+
+        Usage:
+            result = await nw.ingest_document(
+                text=full_paper_text,
+                doc_type="paper",
+                metadata={"title": "...", "doi": "...", "year": 2025},
+            )
+            print(f"Extracted {result.total_entities} entities from {result.chunk_count} chunks")
+        """
+        self._ensure_started()
+        from neuroweave.ingest.document import ChunkStrategy, DocumentIngester
+
+        strategy = ChunkStrategy(chunk_strategy)
+        ingester = DocumentIngester(
+            pipeline=self._pipeline,  # type: ignore[arg-type]
+            store=self._store,  # type: ignore[arg-type]
+            chunk_strategy=strategy,
+            concurrent_chunks=concurrent_chunks,
+        )
+        return await ingester.ingest_document(text, doc_type=doc_type, metadata=metadata)
+
+    # -- Vector context -----------------------------------------------------
+
+    async def get_context_with_vectors(
+        self,
+        query: str,
+        query_vector: list[float],
+        qdrant_client: Any,
+        collection: str = "ravennest_papers",
+        top_k: int = 10,
+        graph_hops: int = 2,
+        qdrant_filter: dict[str, Any] | None = None,
+    ) -> Any:
+        """Combined graph + vector search. Requires qdrant-client to be installed.
+
+        Usage:
+            from qdrant_client import AsyncQdrantClient
+            client = AsyncQdrantClient(url="http://localhost:6333")
+            result = await nw.get_context_with_vectors(
+                query="chromatic polynomial bounds",
+                query_vector=embedding,
+                qdrant_client=client,
+            )
+        """
+        self._ensure_started()
+        from neuroweave.vector.qdrant_bridge import QdrantBridge
+
+        bridge = QdrantBridge(
+            store=self._store,  # type: ignore[arg-type]
+            qdrant_client=qdrant_client,
+            collection=collection,
+        )
+        return await bridge.get_context_with_vectors(
+            query=query,
+            query_vector=query_vector,
+            top_k=top_k,
+            graph_hops=graph_hops,
+            qdrant_filter=qdrant_filter,
+        )
+
     # -- Event subscription -------------------------------------------------
 
     def subscribe(
@@ -478,6 +553,23 @@ class NeuroWeave:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _build_graph_store(config: NeuroWeaveConfig) -> GraphStore:
+    """Factory: returns the correct GraphStore implementation."""
+    if config.graph_backend == GraphBackend.NEO4J:
+        from neuroweave.graph.backends.neo4j import Neo4jGraphStore
+
+        return Neo4jGraphStore(
+            uri=config.neo4j_uri,
+            user=config.neo4j_user,
+            password=config.neo4j_password,
+            database=config.neo4j_database,
+        )  # type: ignore[return-value]
+    # Default: memory
+    from neuroweave.graph.backends.memory import MemoryGraphStore
+
+    return MemoryGraphStore()  # type: ignore[return-value]
 
 
 def _create_llm_client(config: NeuroWeaveConfig) -> LLMClient:
