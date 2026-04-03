@@ -186,11 +186,17 @@ Three-tier system: **field defaults → YAML → environment variables** (highes
 # config/default.yaml
 llm_provider: "anthropic"
 llm_model: "claude-haiku-4-5-20251001"
-graph_backend: "memory"
+graph_backend: "memory"       # or "neo4j" for persistent storage
 server_host: "127.0.0.1"
 server_port: 8787
 log_level: "INFO"
 log_format: "console"
+
+# Neo4j settings (only when graph_backend: "neo4j")
+neo4j_uri: "neo4j://localhost:7687"
+neo4j_user: "neo4j"
+neo4j_password: ""
+neo4j_database: "neo4j"
 ```
 
 ```bash
@@ -218,12 +224,16 @@ neuroweave/
 │   │   └── pipeline.py          # Message → ExtractionResult
 │   ├── graph/
 │   │   ├── store.py             # NetworkX graph + event emission
+│   │   ├── backends/
+│   │   │   ├── base.py          # AbstractGraphStore ABC (all async)
+│   │   │   ├── memory.py        # MemoryGraphStore (NetworkX, async wrapper)
+│   │   │   └── neo4j.py         # Neo4jGraphStore (persistent, native async)
 │   │   ├── ingest.py            # ExtractionResult → graph nodes and edges
 │   │   ├── query.py             # Structured query engine
 │   │   └── nl_query.py          # NL → structured query via LLM
 │   └── server/
 │       └── app.py               # FastAPI: REST + WebSocket + Cytoscape.js
-├── tests/                       # ~308 tests across 16 files
+├── tests/                       # ~400 tests across 22 files
 ├── examples/
 │   └── demo_agent.py            # Self-contained demo agent
 ├── docs/                        # MkDocs documentation (readthedocs.io)
@@ -241,7 +251,7 @@ neuroweave/
 ## Testing
 
 ```bash
-make test           # All ~308 tests
+make test           # All ~400 tests
 make test-cov       # With coverage report
 make lint           # Ruff linting
 make format         # Auto-format
@@ -263,6 +273,9 @@ make format         # Auto-format
 | `test_events.py` | 33 | EventBus lifecycle, timeout, errors |
 | `test_api.py` | 36 | Facade lifecycle, process, query |
 | `test_integration.py` | 28 | Full end-to-end with corpus |
+| `unit/test_neo4j_async.py` | 14 | Async interface verification |
+| `unit/test_schema_bootstrap.py` | 7 | Neo4j schema constraints |
+| `integration/test_async_store_in_event_loop.py` | 2 | Canary: no event loop conflict |
 
 ---
 

@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from io import StringIO
-from unittest.mock import patch
 
 import structlog
 
-from neuroweave.config import LogFormat, NeuroWeaveConfig
+from neuroweave.config import NeuroWeaveConfig
 from neuroweave.logging import configure_logging, get_logger
 
 

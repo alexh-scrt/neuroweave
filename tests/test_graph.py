@@ -7,16 +7,13 @@ import asyncio
 import pytest
 
 from neuroweave.graph.store import (
-    Edge,
     GraphEvent,
     GraphEventType,
     GraphStore,
-    Node,
     NodeType,
     make_edge,
     make_node,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

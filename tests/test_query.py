@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import pytest
 
+from neuroweave.graph.backends.memory import MemoryGraphStore
 from neuroweave.graph.query import QueryResult, query_subgraph
 from neuroweave.graph.store import GraphStore, NodeType, make_edge, make_node
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def store() -> GraphStore:
-    return GraphStore()
+def store() -> MemoryGraphStore:
+    return MemoryGraphStore()
 
 
 @pytest.fixture
-def family_graph(store: GraphStore) -> GraphStore:
+def family_graph(store: MemoryGraphStore) -> MemoryGraphStore:
     """A richer graph modelling the 5-message conversation corpus.
 
     Nodes: User, Alex, Lena, Tokyo, Python, sushi, ramen, children, software engineering
@@ -37,7 +37,7 @@ def family_graph(store: GraphStore) -> GraphStore:
         make_node("software engineering", NodeType.CONCEPT, node_id="sw_eng"),
     ]
     for n in nodes:
-        store.add_node(n)
+        GraphStore.add_node(store, n)
 
     edges = [
         make_edge("user", "alex", "named", 0.95, edge_id="e1"),
@@ -51,7 +51,7 @@ def family_graph(store: GraphStore) -> GraphStore:
         make_edge("user", "python", "experienced_with", 0.90, edge_id="e9"),
     ]
     for e in edges:
-        store.add_edge(e)
+        GraphStore.add_edge(store, e)
 
     return store
 
@@ -99,35 +99,42 @@ class TestQueryResult:
 # ---------------------------------------------------------------------------
 
 class TestEntityResolution:
-    def test_finds_by_exact_name(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_finds_by_exact_name(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=0)
         assert "Lena" in result.node_names()
         assert len(result.seed_node_ids) == 1
 
-    def test_case_insensitive(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["lena"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_case_insensitive(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["lena"], max_hops=0)
         assert "Lena" in result.node_names()
 
-    def test_case_insensitive_upper(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["PYTHON"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_case_insensitive_upper(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["PYTHON"], max_hops=0)
         assert "Python" in result.node_names()
 
-    def test_multiple_entities(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena", "Python"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_multiple_entities(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena", "Python"], max_hops=0)
         assert result.node_names() == {"Lena", "Python"}
         assert len(result.seed_node_ids) == 2
 
-    def test_unknown_entity_returns_empty(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Nonexistent"])
+    @pytest.mark.asyncio
+    async def test_unknown_entity_returns_empty(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Nonexistent"])
         assert result.is_empty
 
-    def test_mix_known_unknown(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena", "Nonexistent"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_mix_known_unknown(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena", "Nonexistent"], max_hops=0)
         assert result.node_names() == {"Lena"}
 
-    def test_empty_entity_list(self, family_graph: GraphStore):
+    @pytest.mark.asyncio
+    async def test_empty_entity_list(self, family_graph: MemoryGraphStore):
         """Empty list is treated as no entity filter — returns entire graph."""
-        result = query_subgraph(family_graph, entities=[], max_hops=0)
+        result = await query_subgraph(family_graph, entities=[], max_hops=0)
         # Empty list → all nodes
         assert result.node_count == 9
 
@@ -137,13 +144,15 @@ class TestEntityResolution:
 # ---------------------------------------------------------------------------
 
 class TestHopTraversal:
-    def test_zero_hops_returns_seed_only(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_zero_hops_returns_seed_only(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=0)
         assert result.node_names() == {"Lena"}
         assert result.edge_count == 0  # No edges: no neighbors collected
 
-    def test_one_hop_from_lena(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=1)
+    @pytest.mark.asyncio
+    async def test_one_hop_from_lena(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=1)
         names = result.node_names()
         # Lena connects to: User (married_to), Tokyo (traveling_to), sushi (prefers)
         assert "Lena" in names
@@ -154,24 +163,27 @@ class TestHopTraversal:
         assert "Python" not in names
         assert "ramen" not in names
 
-    def test_two_hops_from_lena(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=2)
+    @pytest.mark.asyncio
+    async def test_two_hops_from_lena(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=2)
         names = result.node_names()
         # 2 hops from Lena reaches everything connected to User
         assert "Python" in names
         assert "ramen" in names
         assert "Alex" in names
 
-    def test_one_hop_includes_connecting_edges(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=1)
+    @pytest.mark.asyncio
+    async def test_one_hop_includes_connecting_edges(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=1)
         rels = result.relation_types()
         assert "married_to" in rels
         assert "traveling_to" in rels
         assert "prefers" in rels
 
-    def test_hops_from_leaf_node(self, family_graph: GraphStore):
+    @pytest.mark.asyncio
+    async def test_hops_from_leaf_node(self, family_graph: MemoryGraphStore):
         """sushi is a leaf node — 1 hop reaches only Lena."""
-        result = query_subgraph(family_graph, entities=["sushi"], max_hops=1)
+        result = await query_subgraph(family_graph, entities=["sushi"], max_hops=1)
         names = result.node_names()
         assert names == {"sushi", "Lena"}
 
@@ -181,35 +193,40 @@ class TestHopTraversal:
 # ---------------------------------------------------------------------------
 
 class TestRelationFilter:
-    def test_filter_single_relation(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["User"], relations=["prefers"], max_hops=1)
+    @pytest.mark.asyncio
+    async def test_filter_single_relation(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["User"], relations=["prefers"], max_hops=1)
         assert all(e["relation"] == "prefers" for e in result.edges)
         assert result.edge_count >= 1
 
-    def test_filter_multiple_relations(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_filter_multiple_relations(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], relations=["prefers", "married_to"], max_hops=1
         )
         rels = result.relation_types()
         assert rels <= {"prefers", "married_to"}
 
-    def test_filter_excludes_non_matching(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_filter_excludes_non_matching(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], relations=["prefers"], max_hops=1
         )
         assert "married_to" not in result.relation_types()
         assert "traveling_to" not in result.relation_types()
 
-    def test_no_matching_relations_returns_nodes_no_edges(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_no_matching_relations_returns_nodes_no_edges(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], relations=["nonexistent"], max_hops=1
         )
         # Nodes are still returned (hop traversal doesn't depend on relation filter)
         assert result.node_count > 0
         assert result.edge_count == 0
 
-    def test_none_relations_returns_all(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["User"], max_hops=1)
+    @pytest.mark.asyncio
+    async def test_none_relations_returns_all(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["User"], max_hops=1)
         assert result.edge_count >= 7  # User has many edges
 
 
@@ -218,28 +235,32 @@ class TestRelationFilter:
 # ---------------------------------------------------------------------------
 
 class TestConfidenceFilter:
-    def test_min_confidence_filters_edges(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_min_confidence_filters_edges(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], min_confidence=0.90, max_hops=1
         )
         for edge in result.edges:
             assert edge["confidence"] >= 0.90
 
-    def test_high_threshold_filters_most(self, family_graph: GraphStore):
-        all_edges = query_subgraph(family_graph, entities=["User"], max_hops=1)
-        filtered = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_high_threshold_filters_most(self, family_graph: MemoryGraphStore):
+        all_edges = await query_subgraph(family_graph, entities=["User"], max_hops=1)
+        filtered = await query_subgraph(
             family_graph, entities=["User"], min_confidence=0.90, max_hops=1
         )
         assert filtered.edge_count <= all_edges.edge_count
 
-    def test_zero_threshold_returns_all(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_zero_threshold_returns_all(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], min_confidence=0.0, max_hops=1
         )
         assert result.edge_count >= 7
 
-    def test_threshold_one_returns_none_or_few(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_threshold_one_returns_none_or_few(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["User"], min_confidence=1.0, max_hops=1
         )
         # No edges in our corpus have confidence == 1.0
@@ -251,23 +272,27 @@ class TestConfidenceFilter:
 # ---------------------------------------------------------------------------
 
 class TestWholeGraphQuery:
-    def test_no_entities_returns_full_graph(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph)
+    @pytest.mark.asyncio
+    async def test_no_entities_returns_full_graph(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph)
         assert result.node_count == 9
         assert result.edge_count == 9
 
-    def test_no_entities_with_relation_filter(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, relations=["prefers"])
+    @pytest.mark.asyncio
+    async def test_no_entities_with_relation_filter(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, relations=["prefers"])
         assert all(e["relation"] == "prefers" for e in result.edges)
         assert result.edge_count == 2  # Lena→sushi, User→ramen
 
-    def test_no_entities_with_confidence_filter(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, min_confidence=0.90)
+    @pytest.mark.asyncio
+    async def test_no_entities_with_confidence_filter(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, min_confidence=0.90)
         for edge in result.edges:
             assert edge["confidence"] >= 0.90
 
-    def test_empty_graph(self, store: GraphStore):
-        result = query_subgraph(store)
+    @pytest.mark.asyncio
+    async def test_empty_graph(self, store: MemoryGraphStore):
+        result = await query_subgraph(store)
         assert result.is_empty
 
 
@@ -276,8 +301,9 @@ class TestWholeGraphQuery:
 # ---------------------------------------------------------------------------
 
 class TestCombinedFilters:
-    def test_entity_plus_relation_plus_confidence(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_entity_plus_relation_plus_confidence(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph,
             entities=["User"],
             relations=["prefers", "experienced_with"],
@@ -288,9 +314,10 @@ class TestCombinedFilters:
             assert edge["relation"] in ("prefers", "experienced_with")
             assert edge["confidence"] >= 0.85
 
-    def test_lena_preferences(self, family_graph: GraphStore):
+    @pytest.mark.asyncio
+    async def test_lena_preferences(self, family_graph: MemoryGraphStore):
         """The canonical query: 'what does my wife like?'"""
-        result = query_subgraph(
+        result = await query_subgraph(
             family_graph, entities=["Lena"], relations=["prefers"], max_hops=1
         )
         assert "sushi" in result.node_names()
@@ -303,8 +330,9 @@ class TestCombinedFilters:
 # ---------------------------------------------------------------------------
 
 class TestQueryParams:
-    def test_query_params_recorded(self, family_graph: GraphStore):
-        result = query_subgraph(
+    @pytest.mark.asyncio
+    async def test_query_params_recorded(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(
             family_graph, entities=["Lena"], relations=["prefers"], min_confidence=0.5, max_hops=2
         )
         assert result.query_params["entities"] == ["Lena"]
@@ -312,12 +340,14 @@ class TestQueryParams:
         assert result.query_params["min_confidence"] == 0.5
         assert result.query_params["max_hops"] == 2
 
-    def test_hops_traversed_recorded(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=3)
+    @pytest.mark.asyncio
+    async def test_hops_traversed_recorded(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=3)
         assert result.hops_traversed == 3
 
-    def test_seed_ids_recorded(self, family_graph: GraphStore):
-        result = query_subgraph(family_graph, entities=["Lena"], max_hops=0)
+    @pytest.mark.asyncio
+    async def test_seed_ids_recorded(self, family_graph: MemoryGraphStore):
+        result = await query_subgraph(family_graph, entities=["Lena"], max_hops=0)
         assert result.seed_node_ids == ["lena"]
 
 
@@ -326,39 +356,43 @@ class TestQueryParams:
 # ---------------------------------------------------------------------------
 
 class TestEdgeCases:
-    def test_self_referencing_would_not_duplicate(self, store: GraphStore):
+    @pytest.mark.asyncio
+    async def test_self_referencing_would_not_duplicate(self, store: MemoryGraphStore):
         """If a node has a self-edge, it shouldn't cause issues."""
-        store.add_node(make_node("Loop", NodeType.CONCEPT, node_id="loop"))
-        store.add_edge(make_edge("loop", "loop", "references", 0.5, edge_id="e_self"))
+        GraphStore.add_node(store, make_node("Loop", NodeType.CONCEPT, node_id="loop"))
+        GraphStore.add_edge(store, make_edge("loop", "loop", "references", 0.5, edge_id="e_self"))
 
-        result = query_subgraph(store, entities=["Loop"], max_hops=1)
+        result = await query_subgraph(store, entities=["Loop"], max_hops=1)
         assert result.node_count == 1
         assert result.edge_count == 1
 
-    def test_disconnected_components(self, store: GraphStore):
+    @pytest.mark.asyncio
+    async def test_disconnected_components(self, store: MemoryGraphStore):
         """Querying one component doesn't return nodes from another."""
-        store.add_node(make_node("A", NodeType.ENTITY, node_id="a"))
-        store.add_node(make_node("B", NodeType.ENTITY, node_id="b"))
-        store.add_edge(make_edge("a", "b", "knows", 0.9, edge_id="e1"))
+        GraphStore.add_node(store, make_node("A", NodeType.ENTITY, node_id="a"))
+        GraphStore.add_node(store, make_node("B", NodeType.ENTITY, node_id="b"))
+        GraphStore.add_edge(store, make_edge("a", "b", "knows", 0.9, edge_id="e1"))
 
-        store.add_node(make_node("X", NodeType.ENTITY, node_id="x"))
-        store.add_node(make_node("Y", NodeType.ENTITY, node_id="y"))
-        store.add_edge(make_edge("x", "y", "knows", 0.9, edge_id="e2"))
+        GraphStore.add_node(store, make_node("X", NodeType.ENTITY, node_id="x"))
+        GraphStore.add_node(store, make_node("Y", NodeType.ENTITY, node_id="y"))
+        GraphStore.add_edge(store, make_edge("x", "y", "knows", 0.9, edge_id="e2"))
 
-        result = query_subgraph(store, entities=["A"], max_hops=5)
+        result = await query_subgraph(store, entities=["A"], max_hops=5)
         names = result.node_names()
         assert "A" in names
         assert "B" in names
         assert "X" not in names
         assert "Y" not in names
 
-    def test_large_hops_doesnt_error(self, family_graph: GraphStore):
+    @pytest.mark.asyncio
+    async def test_large_hops_doesnt_error(self, family_graph: MemoryGraphStore):
         """max_hops larger than graph diameter still works."""
-        result = query_subgraph(family_graph, entities=["sushi"], max_hops=100)
+        result = await query_subgraph(family_graph, entities=["sushi"], max_hops=100)
         # Should reach everything since graph is connected
         assert result.node_count == 9
 
-    def test_duplicate_entity_names(self, family_graph: GraphStore):
+    @pytest.mark.asyncio
+    async def test_duplicate_entity_names(self, family_graph: MemoryGraphStore):
         """Passing the same entity name twice doesn't duplicate results."""
-        result = query_subgraph(family_graph, entities=["Lena", "Lena"], max_hops=0)
+        result = await query_subgraph(family_graph, entities=["Lena", "Lena"], max_hops=0)
         assert result.node_count == 1

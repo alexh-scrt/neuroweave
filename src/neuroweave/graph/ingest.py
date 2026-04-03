@@ -48,7 +48,7 @@ _TYPE_MAP: dict[str, NodeType] = {
 }
 
 
-def _resolve_entity_name(
+async def _resolve_entity_name(
     name: str,
     store: Any,
     local_index: dict[str, str],
@@ -63,14 +63,14 @@ def _resolve_entity_name(
     key = name.lower()
     if key in local_index:
         return local_index[key]
-    matches = store.find_nodes(name_contains=name)
+    matches = await store.find_nodes(name_contains=name)
     exact = [m for m in matches if m.get("name", "").lower() == key]
     if exact:
         return exact[0]["id"]
     return None
 
 
-def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
+async def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
     """Materialize an ExtractionResult into the graph store.
 
     - Entities are deduplicated by lowercase name (cross-session via store lookup).
@@ -80,7 +80,7 @@ def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
       are auto-created as CONCEPT nodes (handles inconsistent LLM output).
 
     Args:
-        store: The graph store to write to.
+        store: The graph store to write to (async interface).
         result: Extraction result from the pipeline.
 
     Returns:
@@ -95,18 +95,18 @@ def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
     nodes_added = 0
 
     # First, index existing nodes so we can deduplicate
-    for existing in store.find_nodes():
+    for existing in await store.find_nodes():
         name_to_id[existing["name"].lower()] = existing["id"]
 
     for entity in result.entities:
         key = entity.name.lower()
-        existing_id = _resolve_entity_name(entity.name, store, name_to_id)
+        existing_id = await _resolve_entity_name(entity.name, store, name_to_id)
         if existing_id is not None:
             log.debug("ingest.entity_exists", name=entity.name, node_id=existing_id)
             name_to_id[key] = existing_id
             # Merge properties on existing node
             if entity.properties and hasattr(store, "update_node_properties"):
-                store.update_node_properties(existing_id, entity.properties)
+                await store.update_node_properties(existing_id, entity.properties)
             continue
 
         node_type = _TYPE_MAP.get(entity.entity_type, NodeType.CONCEPT)
@@ -118,7 +118,7 @@ def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
             node_type=node_type,
             **extra,
         )
-        store.add_node(node)
+        await store.add_node(node)
         name_to_id[key] = node.id
         nodes_added += 1
 
@@ -127,21 +127,21 @@ def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
     edges_skipped = 0
 
     for rel in result.relations:
-        source_id = _resolve_entity_name(rel.source, store, name_to_id)
-        target_id = _resolve_entity_name(rel.target, store, name_to_id)
+        source_id = await _resolve_entity_name(rel.source, store, name_to_id)
+        target_id = await _resolve_entity_name(rel.target, store, name_to_id)
 
         # Auto-create missing entities referenced in relations.
         if source_id is None:
             log.info("ingest.auto_create_entity", name=rel.source, reason="missing_source")
             node = make_node(name=rel.source, node_type=NodeType.CONCEPT)
-            store.add_node(node)
+            await store.add_node(node)
             name_to_id[rel.source.lower()] = node.id
             source_id = node.id
             nodes_added += 1
         if target_id is None:
             log.info("ingest.auto_create_entity", name=rel.target, reason="missing_target")
             node = make_node(name=rel.target, node_type=NodeType.CONCEPT)
-            store.add_node(node)
+            await store.add_node(node)
             name_to_id[rel.target.lower()] = node.id
             target_id = node.id
             nodes_added += 1
@@ -156,7 +156,7 @@ def ingest_extraction(store: Any, result: ExtractionResult) -> dict[str, int]:
             confidence=rel.confidence,
             **extra,
         )
-        store.add_edge(edge)
+        await store.add_edge(edge)
         edges_added += 1
 
     log.info(

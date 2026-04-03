@@ -7,31 +7,34 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from neuroweave.graph.store import GraphStore, NodeType, make_edge, make_node
+from neuroweave.graph.backends.memory import MemoryGraphStore
+from neuroweave.graph.store import NodeType, make_edge, make_node
 from neuroweave.server.app import WebSocketManager, create_app
 
 
 @pytest.fixture
-def store() -> GraphStore:
-    return GraphStore()
+def store() -> MemoryGraphStore:
+    return MemoryGraphStore()
 
 
 @pytest.fixture
-def client(store: GraphStore) -> TestClient:
+def client(store: MemoryGraphStore) -> TestClient:
     app = create_app(store)
     return TestClient(app)
 
 
 @pytest.fixture
-def populated_store(store: GraphStore) -> GraphStore:
-    store.add_node(make_node("Alex", NodeType.ENTITY, node_id="alex"))
-    store.add_node(make_node("Python", NodeType.CONCEPT, node_id="python"))
-    store.add_edge(make_edge("alex", "python", "prefers", 0.90, edge_id="e1"))
+def populated_store(store: MemoryGraphStore) -> MemoryGraphStore:
+    # Use sync GraphStore methods directly (inherited) for fixture setup
+    from neuroweave.graph.store import GraphStore
+    GraphStore.add_node(store, make_node("Alex", NodeType.ENTITY, node_id="alex"))
+    GraphStore.add_node(store, make_node("Python", NodeType.CONCEPT, node_id="python"))
+    GraphStore.add_edge(store, make_edge("alex", "python", "prefers", 0.90, edge_id="e1"))
     return store
 
 
 @pytest.fixture
-def populated_client(populated_store: GraphStore) -> TestClient:
+def populated_client(populated_store: MemoryGraphStore) -> TestClient:
     app = create_app(populated_store)
     return TestClient(app)
 

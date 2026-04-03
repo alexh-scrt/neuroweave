@@ -7,9 +7,9 @@ import json
 import pytest
 
 from neuroweave.extraction.llm_client import MockLLMClient
+from neuroweave.graph.backends.memory import MemoryGraphStore
 from neuroweave.graph.nl_query import NLQueryPlanner, QueryPlan
 from neuroweave.graph.store import GraphStore, NodeType, make_edge, make_node
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -17,12 +17,12 @@ from neuroweave.graph.store import GraphStore, NodeType, make_edge, make_node
 
 
 @pytest.fixture
-def store() -> GraphStore:
-    return GraphStore()
+def store() -> MemoryGraphStore:
+    return MemoryGraphStore()
 
 
 @pytest.fixture
-def family_graph(store: GraphStore) -> GraphStore:
+def family_graph(store: MemoryGraphStore) -> MemoryGraphStore:
     """Same graph as test_query.py — the 5-message conversation corpus."""
     nodes = [
         make_node("User", NodeType.ENTITY, node_id="user"),
@@ -36,7 +36,7 @@ def family_graph(store: GraphStore) -> GraphStore:
         make_node("software engineering", NodeType.CONCEPT, node_id="sw_eng"),
     ]
     for n in nodes:
-        store.add_node(n)
+        GraphStore.add_node(store, n)
 
     edges = [
         make_edge("user", "alex", "named", 0.95, edge_id="e1"),
@@ -50,7 +50,7 @@ def family_graph(store: GraphStore) -> GraphStore:
         make_edge("user", "python", "experienced_with", 0.90, edge_id="e9"),
     ]
     for e in edges:
-        store.add_edge(e)
+        GraphStore.add_edge(store, e)
 
     return store
 
@@ -112,7 +112,7 @@ class TestQueryPlan:
 
 
 class TestSystemPrompt:
-    def test_prompt_includes_entity_names(self, family_graph: GraphStore):
+    def test_prompt_includes_entity_names(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm()
         planner = NLQueryPlanner(mock_llm, family_graph)
         prompt = planner._build_system_prompt()
@@ -123,7 +123,7 @@ class TestSystemPrompt:
         assert "Python" in prompt
         assert "sushi" in prompt
 
-    def test_prompt_includes_relation_types(self, family_graph: GraphStore):
+    def test_prompt_includes_relation_types(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm()
         planner = NLQueryPlanner(mock_llm, family_graph)
         prompt = planner._build_system_prompt()
@@ -133,7 +133,7 @@ class TestSystemPrompt:
         assert "traveling_to" in prompt
         assert "experienced_with" in prompt
 
-    def test_prompt_includes_node_types(self, family_graph: GraphStore):
+    def test_prompt_includes_node_types(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm()
         planner = NLQueryPlanner(mock_llm, family_graph)
         prompt = planner._build_system_prompt()
@@ -141,7 +141,7 @@ class TestSystemPrompt:
         assert "entity" in prompt
         assert "concept" in prompt
 
-    def test_prompt_for_empty_graph(self, store: GraphStore):
+    def test_prompt_for_empty_graph(self, store: MemoryGraphStore):
         mock_llm = _make_mock_llm()
         planner = NLQueryPlanner(mock_llm, store)
         prompt = planner._build_system_prompt()
@@ -149,7 +149,7 @@ class TestSystemPrompt:
         assert "graph is empty" in prompt
         assert "no relations yet" in prompt
 
-    async def test_llm_receives_system_prompt(self, family_graph: GraphStore):
+    async def test_llm_receives_system_prompt(self, family_graph: MemoryGraphStore):
         """Verify the system prompt is passed to the LLM extract call."""
         mock_llm = _make_mock_llm(
             anything={"entities": [], "relations": None, "max_hops": 1, "reasoning": "test"},
@@ -164,12 +164,12 @@ class TestSystemPrompt:
 
 
 # ---------------------------------------------------------------------------
-# Core NL→Plan translation
+# Core NL->Plan translation
 # ---------------------------------------------------------------------------
 
 
 class TestPlanGeneration:
-    async def test_wife_preferences(self, family_graph: GraphStore):
+    async def test_wife_preferences(self, family_graph: MemoryGraphStore):
         """The canonical query: 'what does my wife like?'"""
         mock_llm = _make_mock_llm(
             wife={
@@ -189,7 +189,7 @@ class TestPlanGeneration:
         assert not plan.is_broad_search
         assert "Lena" in plan.reasoning
 
-    async def test_travel_plans(self, family_graph: GraphStore):
+    async def test_travel_plans(self, family_graph: MemoryGraphStore):
         """'where are we traveling?'"""
         mock_llm = _make_mock_llm(
             traveling={
@@ -207,7 +207,7 @@ class TestPlanGeneration:
         assert plan.relations == ["traveling_to"]
         assert plan.max_hops == 1
 
-    async def test_broad_user_query(self, family_graph: GraphStore):
+    async def test_broad_user_query(self, family_graph: MemoryGraphStore):
         """'what do you know about me?'"""
         mock_llm = _make_mock_llm(
             know={
@@ -225,7 +225,7 @@ class TestPlanGeneration:
         assert plan.relations is None
         assert plan.max_hops == 2
 
-    async def test_specific_entity_query(self, family_graph: GraphStore):
+    async def test_specific_entity_query(self, family_graph: MemoryGraphStore):
         """'tell me about Tokyo'"""
         mock_llm = _make_mock_llm(
             tokyo={
@@ -243,7 +243,7 @@ class TestPlanGeneration:
         assert plan.relations is None
         assert plan.max_hops == 2
 
-    async def test_plan_records_duration(self, family_graph: GraphStore):
+    async def test_plan_records_duration(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm(
             test={
                 "entities": ["User"],
@@ -257,7 +257,7 @@ class TestPlanGeneration:
 
         assert plan.duration_ms >= 0.0
 
-    async def test_plan_records_raw_response(self, family_graph: GraphStore):
+    async def test_plan_records_raw_response(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm(
             test={
                 "entities": ["User"],
@@ -279,8 +279,8 @@ class TestPlanGeneration:
 
 
 class TestPlanExecution:
-    async def test_execute_wife_preferences(self, family_graph: GraphStore):
-        """End-to-end: NL question → plan → query result."""
+    async def test_execute_wife_preferences(self, family_graph: MemoryGraphStore):
+        """End-to-end: NL question -> plan -> query result."""
         mock_llm = _make_mock_llm(
             wife={
                 "entities": ["Lena"],
@@ -292,14 +292,14 @@ class TestPlanExecution:
         )
         planner = NLQueryPlanner(mock_llm, family_graph)
         plan = await planner.plan("what does my wife like?")
-        result = planner.execute(plan)
+        result = await planner.execute(plan)
 
         assert "sushi" in result.node_names()
         assert "Lena" in result.node_names()
         assert result.edge_count >= 1
         assert all(e["relation"] == "prefers" for e in result.edges)
 
-    async def test_execute_travel(self, family_graph: GraphStore):
+    async def test_execute_travel(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm(
             traveling={
                 "entities": ["User"],
@@ -311,12 +311,12 @@ class TestPlanExecution:
         )
         planner = NLQueryPlanner(mock_llm, family_graph)
         plan = await planner.plan("where are we traveling?")
-        result = planner.execute(plan)
+        result = await planner.execute(plan)
 
         assert "Tokyo" in result.node_names()
         assert any(e["relation"] == "traveling_to" for e in result.edges)
 
-    async def test_execute_broad_query(self, family_graph: GraphStore):
+    async def test_execute_broad_query(self, family_graph: MemoryGraphStore):
         mock_llm = _make_mock_llm(
             know={
                 "entities": ["User"],
@@ -328,7 +328,7 @@ class TestPlanExecution:
         )
         planner = NLQueryPlanner(mock_llm, family_graph)
         plan = await planner.plan("what do you know about me?")
-        result = planner.execute(plan)
+        result = await planner.execute(plan)
 
         # 2 hops from User should reach most of the graph
         assert result.node_count >= 7
@@ -336,7 +336,7 @@ class TestPlanExecution:
         assert "Tokyo" in result.node_names()
         assert "Python" in result.node_names()
 
-    async def test_convenience_query_method(self, family_graph: GraphStore):
+    async def test_convenience_query_method(self, family_graph: MemoryGraphStore):
         """Test the combined plan+execute `query()` method."""
         mock_llm = _make_mock_llm(
             wife={
@@ -360,8 +360,8 @@ class TestPlanExecution:
 
 
 class TestFallback:
-    async def test_fallback_on_unparseable_response(self, family_graph: GraphStore):
-        """LLM returns garbage → falls back to broad whole-graph search."""
+    async def test_fallback_on_unparseable_response(self, family_graph: MemoryGraphStore):
+        """LLM returns garbage -> falls back to broad whole-graph search."""
         mock_llm = MockLLMClient()
         mock_llm.set_response("anything", "this is not json at all")
         # Override extract to return raw string
@@ -379,8 +379,8 @@ class TestFallback:
         assert plan.max_hops == 2
         assert "Fallback" in plan.reasoning
 
-    async def test_fallback_on_llm_error(self, family_graph: GraphStore):
-        """LLM raises an error → falls back to broad search."""
+    async def test_fallback_on_llm_error(self, family_graph: MemoryGraphStore):
+        """LLM raises an error -> falls back to broad search."""
         mock_llm = MockLLMClient()
 
         async def failing_extract(system_prompt: str, user_message: str) -> str:
@@ -395,7 +395,7 @@ class TestFallback:
         assert plan.is_broad_search
         assert plan.max_hops == 2
 
-    async def test_fallback_still_returns_results(self, family_graph: GraphStore):
+    async def test_fallback_still_returns_results(self, family_graph: MemoryGraphStore):
         """Even the fallback plan should return useful graph data."""
         mock_llm = MockLLMClient()
 
@@ -407,14 +407,14 @@ class TestFallback:
 
         planner = NLQueryPlanner(mock_llm, family_graph)
         plan = await planner.plan("anything")
-        result = planner.execute(plan)
+        result = await planner.execute(plan)
 
         # Broad search should return the whole graph
         assert result.node_count == 9
         assert result.edge_count == 9
 
-    async def test_fallback_on_empty_json(self, family_graph: GraphStore):
-        """LLM returns empty JSON object → fallback."""
+    async def test_fallback_on_empty_json(self, family_graph: MemoryGraphStore):
+        """LLM returns empty JSON object -> fallback."""
         mock_llm = MockLLMClient()
 
         async def empty_json(system_prompt: str, user_message: str) -> str:
@@ -425,12 +425,12 @@ class TestFallback:
         planner = NLQueryPlanner(mock_llm, family_graph)
         plan = await planner.plan("some question")
 
-        # {} is parseable but has no entities → broad search
+        # {} is parseable but has no entities -> broad search
         assert plan.is_broad_search
         assert plan.max_hops == 1  # default from parsed empty, not fallback
 
-    async def test_fallback_on_partial_json(self, family_graph: GraphStore):
-        """LLM returns partial JSON → repair + use what we can."""
+    async def test_fallback_on_partial_json(self, family_graph: MemoryGraphStore):
+        """LLM returns partial JSON -> repair + use what we can."""
         mock_llm = MockLLMClient()
 
         async def partial_json(system_prompt: str, user_message: str) -> str:
@@ -453,8 +453,8 @@ class TestFallback:
 
 
 class TestParsing:
-    async def test_entities_as_non_list(self, family_graph: GraphStore):
-        """entities is a string instead of list → treat as empty."""
+    async def test_entities_as_non_list(self, family_graph: MemoryGraphStore):
+        """entities is a string instead of list -> treat as empty."""
         mock_llm = MockLLMClient()
 
         async def bad_entities(system_prompt: str, user_message: str) -> str:
@@ -466,8 +466,8 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.entities == []
 
-    async def test_relations_as_empty_list(self, family_graph: GraphStore):
-        """relations is [] → treat as None (no filter)."""
+    async def test_relations_as_empty_list(self, family_graph: MemoryGraphStore):
+        """relations is [] -> treat as None (no filter)."""
         mock_llm = MockLLMClient()
 
         async def empty_relations(system_prompt: str, user_message: str) -> str:
@@ -479,7 +479,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.relations is None
 
-    async def test_max_hops_clamped_to_range(self, family_graph: GraphStore):
+    async def test_max_hops_clamped_to_range(self, family_graph: MemoryGraphStore):
         """max_hops > 10 gets clamped."""
         mock_llm = MockLLMClient()
 
@@ -492,7 +492,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.max_hops == 10
 
-    async def test_negative_max_hops_clamped(self, family_graph: GraphStore):
+    async def test_negative_max_hops_clamped(self, family_graph: MemoryGraphStore):
         mock_llm = MockLLMClient()
 
         async def neg_hops(system_prompt: str, user_message: str) -> str:
@@ -504,7 +504,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.max_hops == 0
 
-    async def test_confidence_clamped(self, family_graph: GraphStore):
+    async def test_confidence_clamped(self, family_graph: MemoryGraphStore):
         mock_llm = MockLLMClient()
 
         async def high_conf(system_prompt: str, user_message: str) -> str:
@@ -516,7 +516,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.min_confidence == 1.0
 
-    async def test_confidence_negative_clamped(self, family_graph: GraphStore):
+    async def test_confidence_negative_clamped(self, family_graph: MemoryGraphStore):
         mock_llm = MockLLMClient()
 
         async def neg_conf(system_prompt: str, user_message: str) -> str:
@@ -528,8 +528,8 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.min_confidence == 0.0
 
-    async def test_max_hops_as_string(self, family_graph: GraphStore):
-        """max_hops comes back as string → parse to int."""
+    async def test_max_hops_as_string(self, family_graph: MemoryGraphStore):
+        """max_hops comes back as string -> parse to int."""
         mock_llm = MockLLMClient()
 
         async def str_hops(system_prompt: str, user_message: str) -> str:
@@ -541,7 +541,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.max_hops == 2
 
-    async def test_reasoning_as_non_string(self, family_graph: GraphStore):
+    async def test_reasoning_as_non_string(self, family_graph: MemoryGraphStore):
         mock_llm = MockLLMClient()
 
         async def int_reasoning(system_prompt: str, user_message: str) -> str:
@@ -553,7 +553,7 @@ class TestParsing:
         plan = await planner.plan("test")
         assert plan.reasoning == ""
 
-    async def test_json_with_markdown_fences(self, family_graph: GraphStore):
+    async def test_json_with_markdown_fences(self, family_graph: MemoryGraphStore):
         """LLM wraps response in ```json ... ``` fences."""
         mock_llm = MockLLMClient()
 
@@ -567,7 +567,7 @@ class TestParsing:
         assert plan.entities == ["Lena"]
         assert plan.relations == ["prefers"]
 
-    async def test_json_with_preamble(self, family_graph: GraphStore):
+    async def test_json_with_preamble(self, family_graph: MemoryGraphStore):
         """LLM adds explanation before the JSON."""
         mock_llm = MockLLMClient()
 
@@ -581,8 +581,8 @@ class TestParsing:
         assert plan.entities == ["Tokyo"]
         assert plan.relations is None
 
-    async def test_null_entities_in_json(self, family_graph: GraphStore):
-        """entities is null → treat as empty list."""
+    async def test_null_entities_in_json(self, family_graph: MemoryGraphStore):
+        """entities is null -> treat as empty list."""
         mock_llm = MockLLMClient()
 
         async def null_entities(system_prompt: str, user_message: str) -> str:
@@ -602,8 +602,8 @@ class TestParsing:
 
 
 class TestEmptyGraph:
-    async def test_plan_on_empty_graph(self, store: GraphStore):
-        """NL query on empty graph still works — returns empty result."""
+    async def test_plan_on_empty_graph(self, store: MemoryGraphStore):
+        """NL query on empty graph still works -- returns empty result."""
         mock_llm = _make_mock_llm(
             anything={
                 "entities": [],
@@ -616,7 +616,7 @@ class TestEmptyGraph:
         result = await planner.query("what do you know?")
         assert result.is_empty
 
-    async def test_system_prompt_mentions_empty(self, store: GraphStore):
+    async def test_system_prompt_mentions_empty(self, store: MemoryGraphStore):
         mock_llm = _make_mock_llm()
         planner = NLQueryPlanner(mock_llm, store)
         prompt = planner._build_system_prompt()

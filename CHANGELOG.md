@@ -5,6 +5,50 @@ All notable changes to NeuroWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-04-03
+
+### Summary
+
+Bug-fix release addressing two critical issues with the Neo4j backend: async bridge
+failure and missing schema constraints. The entire `AbstractGraphStore` interface is
+now natively async, eliminating `run_until_complete` bridging.
+
+### Fixed
+
+**NW-FIX-001 — Neo4j async bridge failure**
+
+- Removed all `asyncio.get_event_loop().run_until_complete()` calls from `Neo4jGraphStore`.
+- `AbstractGraphStore` methods are now `async def` throughout — no sync-to-async bridging.
+- `MemoryGraphStore` wraps sync NetworkX ops in `async def` (trivially async).
+- `Neo4jGraphStore` uses the async Neo4j driver natively.
+- Cascaded `await` through all callers: `ingest_extraction()`, `query_subgraph()`,
+  `query_by_type()`, `get_proof_chain()`, `get_domain_graph()`, `NLQueryPlanner`,
+  `NeuroWeave` facade, server routes, CLI, and demo agent.
+
+**NW-FIX-002 — Neo4j schema constraints and indexes**
+
+- `Neo4jGraphStore.initialize()` creates uniqueness constraint on `NWNode.id`.
+- Creates indexes on `NWNode.name`, `NWNode.node_type`, and `NW_EDGE.relation`.
+- Uses `IF NOT EXISTS` — idempotent, safe to call on every startup.
+- `_build_graph_store()` calls `await store.initialize()` for all backends.
+
+### Changed
+
+- `_build_graph_store()` is now `async def`.
+- `ingest_extraction()` is now `async def`.
+- `query_subgraph()`, `query_by_type()`, `get_proof_chain()`, `get_domain_graph()` are now `async def`.
+- `process_message()` in `main.py` is now `async def`.
+- `node_count` and `edge_count` remain sync properties (cached counters, not DB queries).
+
+### Testing
+
+- All 377 existing tests updated for async interface — zero regressions.
+- New test files: `test_neo4j_async.py` (14 tests), `test_schema_bootstrap.py` (7 tests),
+  `test_async_store_in_event_loop.py` (2 canary tests).
+- Canary test verifies no `run_until_complete` or `get_event_loop` in Neo4j module source.
+
+---
+
 ## [0.2.0] — 2026-04-03
 
 ### Summary

@@ -1,6 +1,6 @@
 # NeuroWeave — Architecture
 
-> Technical architecture for NeuroWeave v0.1.0.
+> Technical architecture for NeuroWeave v0.2.1.
 > For quickstart and usage, see [README.md](README.md).
 
 ---
@@ -95,7 +95,9 @@ flowchart TB
         REPAIR["repair_llm_json"]
   end
  subgraph s5["Graph — graph/"]
-        STORE["GraphStore"]
+        STORE["AbstractGraphStore"]
+        MEM_STORE["MemoryGraphStore"]
+        NEO4J_STORE["Neo4jGraphStore"]
         NX[("NetworkX MultiDiGraph")]
         INGEST["ingest_extraction"]
         MAKE_N["make_node / make_edge"]
@@ -125,7 +127,9 @@ flowchart TB
     PROC --> PIPELINE & INGEST
     PIPELINE --> LLM_ABS & REPAIR
     INGEST --> STORE
-    STORE --> NX
+    STORE --> MEM_STORE
+    STORE --> NEO4J_STORE
+    MEM_STORE --> NX
     STORE -- events --> EBUS
     EBUS --> BCAST
     EBUS --> FACADE
@@ -326,9 +330,16 @@ All three are frozen dataclasses (`frozen=True, slots=True`) — immutable after
 
 ### Graph Store
 
-**File:** `src/neuroweave/graph/store.py`
+**Files:** `src/neuroweave/graph/store.py`, `src/neuroweave/graph/backends/`
 
-The in-memory graph is backed by a NetworkX `MultiDiGraph`. MultiDiGraph was chosen because the knowledge graph needs parallel directed edges between the same pair of nodes (e.g., Alex →married_to→ Lena AND Alex →works_with→ Lena).
+The graph layer uses a pluggable backend architecture. `AbstractGraphStore` (ABC) defines the async interface. Two implementations:
+
+- **`MemoryGraphStore`** — wraps sync NetworkX ops in async methods. Zero config, fast, ephemeral.
+- **`Neo4jGraphStore`** — native async Neo4j driver. Persistent, production-ready. Creates uniqueness constraints and indexes on startup via `initialize()`.
+
+The in-memory backend uses a NetworkX `MultiDiGraph`. MultiDiGraph was chosen because the knowledge graph needs parallel directed edges between the same pair of nodes (e.g., Alex →married_to→ Lena AND Alex →works_with→ Lena).
+
+All store methods are `async def` (since v0.2.1). `node_count` and `edge_count` remain sync properties — they return cached counters, not live DB queries.
 
 ```mermaid
 classDiagram
@@ -962,7 +973,7 @@ graph TB
     style E2E fill:#6c63ff,stroke:#4a44b3,color:#fff
 ```
 
-**Total: ~308 tests across 16 test files.**
+**Total: ~400 tests across 22 test files.**
 
 The test corpus in `conftest.py` defines a shared 5-message conversation with pre-registered mock LLM responses. Both `test_extraction.py` (unit) and `test_e2e.py` / `test_live_updates.py` / `test_integration.py` (integration) use this same corpus, ensuring consistency across test layers.
 

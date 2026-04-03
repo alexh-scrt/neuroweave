@@ -6,13 +6,14 @@ import pytest
 
 from neuroweave.extraction.llm_client import MockLLMClient
 from neuroweave.extraction.pipeline import ExtractionPipeline
+from neuroweave.graph.backends.memory import MemoryGraphStore
 from neuroweave.graph.store import GraphStore
 from neuroweave.ingest.document import ChunkStrategy, DocumentIngester, DocumentIngestionResult
 
 
 @pytest.fixture
-def store() -> GraphStore:
-    return GraphStore()
+def store() -> MemoryGraphStore:
+    return MemoryGraphStore()
 
 
 @pytest.fixture
@@ -171,7 +172,7 @@ async def test_ingest_document_creates_paper_node_when_metadata_provided(mock_pi
     )
     from neuroweave.graph.store import NodeType
 
-    papers = store.find_nodes(node_type=NodeType.PAPER)
+    papers = await store.find_nodes(node_type=NodeType.PAPER)
     assert any(n["name"] == "Test Paper" for n in papers)
 
 

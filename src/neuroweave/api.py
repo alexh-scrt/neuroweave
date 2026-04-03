@@ -15,9 +15,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import uvicorn
 
@@ -235,7 +236,7 @@ class NeuroWeave:
 
         # Core components
         llm_client = _create_llm_client(self._config)
-        self._store = _build_graph_store(self._config)
+        self._store = await _build_graph_store(self._config)
         self._pipeline = ExtractionPipeline(
             llm_client,
             mode=self._config.extraction_mode,
@@ -301,7 +302,7 @@ class NeuroWeave:
         self._ensure_started()
 
         extraction = await self._pipeline.extract(message)  # type: ignore[union-attr]
-        stats = ingest_extraction(self._store, extraction)  # type: ignore[arg-type]
+        stats = await ingest_extraction(self._store, extraction)  # type: ignore[arg-type]
 
         return ProcessResult(
             extraction=extraction,
@@ -345,7 +346,7 @@ class NeuroWeave:
         else:
             # Structured query path
             entities = text_or_entities if text_or_entities else None
-            return query_subgraph(
+            return await query_subgraph(
                 self._store,  # type: ignore[arg-type]
                 entities=entities,
                 relations=relations,
@@ -376,7 +377,7 @@ class NeuroWeave:
 
         # Step 2: Query for relevant context using the message as an NL query
         plan = await self._nl_planner.plan(message)  # type: ignore[union-attr]
-        relevant = self._nl_planner.execute(plan)  # type: ignore[union-attr]
+        relevant = await self._nl_planner.execute(plan)  # type: ignore[union-attr]
 
         return ContextResult(
             process=process_result,
@@ -555,21 +556,27 @@ class NeuroWeave:
 # ---------------------------------------------------------------------------
 
 
-def _build_graph_store(config: NeuroWeaveConfig) -> GraphStore:
-    """Factory: returns the correct GraphStore implementation."""
+async def _build_graph_store(config: NeuroWeaveConfig) -> GraphStore:
+    """Factory: returns the correct GraphStore implementation.
+
+    Calls initialize() on the store — idempotent (no-op for memory, creates
+    schema for Neo4j).
+    """
     if config.graph_backend == GraphBackend.NEO4J:
         from neuroweave.graph.backends.neo4j import Neo4jGraphStore
 
-        return Neo4jGraphStore(
+        store = Neo4jGraphStore(
             uri=config.neo4j_uri,
             user=config.neo4j_user,
             password=config.neo4j_password,
             database=config.neo4j_database,
-        )  # type: ignore[return-value]
-    # Default: memory
-    from neuroweave.graph.backends.memory import MemoryGraphStore
+        )
+    else:
+        from neuroweave.graph.backends.memory import MemoryGraphStore
 
-    return MemoryGraphStore()  # type: ignore[return-value]
+        store = MemoryGraphStore()
+    await store.initialize()
+    return store  # type: ignore[return-value]
 
 
 def _create_llm_client(config: NeuroWeaveConfig) -> LLMClient:

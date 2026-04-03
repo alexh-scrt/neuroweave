@@ -239,8 +239,8 @@ async def run_demo(
         print(f"     Nodes: {', '.join(result.node_names())}")
         print(f"     Edges: {result.edge_count}")
         for edge in result.edges:
-            src = nw.graph.get_node(edge["source_id"])
-            tgt = nw.graph.get_node(edge["target_id"])
+            src = await nw.graph.get_node(edge["source_id"])
+            tgt = await nw.graph.get_node(edge["target_id"])
             src_name = src["name"] if src else "?"
             tgt_name = tgt["name"] if tgt else "?"
             print(f"     {src_name} --{edge['relation']}--> {tgt_name} ({edge['confidence']:.2f})")
@@ -265,12 +265,12 @@ async def run_demo(
         print(f"  Event bus: {nw.event_bus.emit_count} events emitted")
         print()
         print("  Graph contents:")
-        data = nw.graph.to_dict()
+        data = await nw.graph.to_dict()
         for node in data["nodes"]:
             print(f"    [{node['node_type']}] {node['name']}")
         for edge in data["edges"]:
-            src = nw.graph.get_node(edge["source_id"])
-            tgt = nw.graph.get_node(edge["target_id"])
+            src = await nw.graph.get_node(edge["source_id"])
+            tgt = await nw.graph.get_node(edge["target_id"])
             src_name = src["name"] if src else edge["source_id"]
             tgt_name = tgt["name"] if tgt else edge["target_id"]
             print(f"    {src_name} --{edge['relation']}--> {tgt_name} ({edge['confidence']:.2f})")
@@ -339,15 +339,15 @@ async def run_interactive(
                 continue
 
             if message.lower() == "/graph":
-                data = nw.graph.to_dict()
+                data = await nw.graph.to_dict()
                 if not data["nodes"]:
                     print("  Graph is empty — start chatting!\n")
                     continue
                 for node in data["nodes"]:
                     print(f"  [{node['node_type']}] {node['name']}")
                 for edge in data["edges"]:
-                    src = nw.graph.get_node(edge["source_id"])
-                    tgt = nw.graph.get_node(edge["target_id"])
+                    src = await nw.graph.get_node(edge["source_id"])
+                    tgt = await nw.graph.get_node(edge["target_id"])
                     print(f"  {src['name'] if src else '?'} --{edge['relation']}--> {tgt['name'] if tgt else '?'}")
                 print()
                 continue

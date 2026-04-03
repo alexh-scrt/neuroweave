@@ -10,8 +10,6 @@ structured query engine (Tier 1) for execution.
 
 from __future__ import annotations
 
-import json
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -169,7 +167,7 @@ class NLQueryPlanner:
 
         return plan
 
-    def execute(self, plan: QueryPlan) -> QueryResult:
+    async def execute(self, plan: QueryPlan) -> QueryResult:
         """Execute a QueryPlan against the graph store.
 
         This is a thin wrapper around `query_subgraph()` that maps
@@ -181,7 +179,7 @@ class NLQueryPlanner:
         Returns:
             QueryResult from the structured query engine.
         """
-        return query_subgraph(
+        return await query_subgraph(
             self._store,
             entities=plan.entities if plan.entities else None,
             relations=plan.relations,
@@ -199,7 +197,7 @@ class NLQueryPlanner:
             QueryResult from executing the generated plan.
         """
         plan = await self.plan(question)
-        return self.execute(plan)
+        return await self.execute(plan)
 
     # -- Internal -----------------------------------------------------------
 

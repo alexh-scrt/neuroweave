@@ -21,8 +21,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from neuroweave.graph.store import GraphEvent, GraphEventType
 from neuroweave.logging import get_logger
@@ -179,7 +179,7 @@ class EventBus:
                 self._call_handler(sub.handler, event),
                 timeout=self._handler_timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._handler_timeout_count += 1
             log.warning(
                 "events.handler_timeout",

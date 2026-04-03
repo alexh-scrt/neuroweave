@@ -73,17 +73,18 @@ class QdrantBridge:
         words = [w for w in query.split() if len(w) > 4][:3]
         nodes: list[dict[str, Any]] = []
         for word in words:
-            nodes.extend(self._store.find_nodes(name_contains=word))
+            nodes.extend(await self._store.find_nodes(name_contains=word))
         if not nodes:
             return QueryResult(nodes=[], edges=[])
         node_ids = list({n["id"] for n in nodes})[:5]
         neighbors: list[dict[str, Any]] = []
         for nid in node_ids:
-            neighbors.extend(self._store.get_neighbors(nid, depth=max_hops))
+            neighbors.extend(await self._store.get_neighbors(nid, depth=max_hops))
         all_nodes = list({n["id"]: n for n in [*nodes, *neighbors]}.values())
         all_ids = {n["id"] for n in all_nodes}
+        store_edges = await self._store.get_edges()
         all_edges = [
-            e for e in self._store.get_edges()
+            e for e in store_edges
             if e.get("source_id") in all_ids and e.get("target_id") in all_ids
         ]
         return QueryResult(nodes=all_nodes, edges=all_edges)
@@ -124,7 +125,7 @@ class QdrantBridge:
         """Store a node's vector embedding in Qdrant alongside the graph node."""
         from qdrant_client.models import PointStruct
 
-        node = self._store.get_node(node_id)
+        node = await self._store.get_node(node_id)
         full_payload = {**(node or {}), **(payload or {})}
         await self._qdrant.upsert(
             collection_name=self._collection,

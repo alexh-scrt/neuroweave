@@ -1,7 +1,6 @@
 """Tests for configuration loading, validation, and env var overrides."""
 
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

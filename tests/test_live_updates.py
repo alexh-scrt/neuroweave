@@ -23,10 +23,10 @@ from fastapi.testclient import TestClient
 
 from neuroweave.extraction.llm_client import MockLLMClient
 from neuroweave.extraction.pipeline import ExtractionPipeline
-from neuroweave.graph.store import GraphEvent, GraphEventType, GraphStore
+from neuroweave.graph.backends.memory import MemoryGraphStore
+from neuroweave.graph.store import GraphEvent, GraphEventType
 from neuroweave.main import process_message
 from neuroweave.server.app import create_app
-
 
 CONVERSATION = [
     "My name is Alex and I'm a software engineer",
@@ -38,8 +38,8 @@ CONVERSATION = [
 
 
 @pytest.fixture
-def store() -> GraphStore:
-    return GraphStore()
+def store() -> MemoryGraphStore:
+    return MemoryGraphStore()
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def pipeline(mock_llm_with_corpus: MockLLMClient) -> ExtractionPipeline:
 class TestEventsEmitted:
     """process_message() → graph mutations → events land in asyncio.Queue."""
 
-    async def test_single_message_emits_events(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_single_message_emits_events(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
@@ -68,7 +68,7 @@ class TestEventsEmitted:
         assert len(node_events) >= 1
         assert len(edge_events) >= 0
 
-    async def test_all_messages_emit_events(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_all_messages_emit_events(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
@@ -86,7 +86,7 @@ class TestEventsEmitted:
         assert len(node_events) >= 8
         assert len(edge_events) >= 7
 
-    async def test_event_data_contains_node_info(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_event_data_contains_node_info(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
@@ -101,7 +101,7 @@ class TestEventsEmitted:
             assert "name" in event.data
             assert "node_type" in event.data
 
-    async def test_event_data_contains_edge_info(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_event_data_contains_edge_info(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
 
@@ -117,7 +117,7 @@ class TestEventsEmitted:
             assert "relation" in event.data
             assert "confidence" in event.data
 
-    async def test_dedup_emits_no_extra_node_added(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_dedup_emits_no_extra_node_added(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         """User node appears in every message but should only emit NODE_ADDED once."""
         q: asyncio.Queue[GraphEvent] = asyncio.Queue()
         store.set_event_queue(q)
@@ -155,7 +155,7 @@ class TestServerReflectsGraph:
     """After process_message(), the REST API and WebSocket snapshot show the graph."""
 
     async def test_rest_api_shows_graph_after_processing(
-        self, store: GraphStore, pipeline: ExtractionPipeline
+        self, store: MemoryGraphStore, pipeline: ExtractionPipeline
     ):
         for msg in CONVERSATION:
             await process_message(msg, pipeline, store)
@@ -172,7 +172,7 @@ class TestServerReflectsGraph:
         assert data["stats"]["node_count"] == len(data["nodes"])
         assert data["stats"]["edge_count"] == len(data["edges"])
 
-    async def test_health_shows_counts(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_health_shows_counts(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         for msg in CONVERSATION:
             await process_message(msg, pipeline, store)
 
@@ -186,7 +186,7 @@ class TestServerReflectsGraph:
         assert data["graph"]["edge_count"] >= 7
 
     async def test_websocket_snapshot_shows_full_graph(
-        self, store: GraphStore, pipeline: ExtractionPipeline
+        self, store: MemoryGraphStore, pipeline: ExtractionPipeline
     ):
         for msg in CONVERSATION:
             await process_message(msg, pipeline, store)
@@ -203,7 +203,7 @@ class TestServerReflectsGraph:
             assert len(data["data"]["edges"]) >= 7
 
     async def test_websocket_snapshot_node_names(
-        self, store: GraphStore, pipeline: ExtractionPipeline
+        self, store: MemoryGraphStore, pipeline: ExtractionPipeline
     ):
         for msg in CONVERSATION:
             await process_message(msg, pipeline, store)
@@ -223,7 +223,7 @@ class TestServerReflectsGraph:
             assert "Python" in names
 
     async def test_websocket_snapshot_has_relations(
-        self, store: GraphStore, pipeline: ExtractionPipeline
+        self, store: MemoryGraphStore, pipeline: ExtractionPipeline
     ):
         for msg in CONVERSATION:
             await process_message(msg, pipeline, store)
@@ -248,7 +248,7 @@ class TestServerReflectsGraph:
 class TestIncrementalServerUpdates:
     """The REST API shows the graph growing as messages are processed."""
 
-    async def test_graph_grows_via_api(self, store: GraphStore, pipeline: ExtractionPipeline):
+    async def test_graph_grows_via_api(self, store: MemoryGraphStore, pipeline: ExtractionPipeline):
         app = create_app(store)
         client = TestClient(app)
 

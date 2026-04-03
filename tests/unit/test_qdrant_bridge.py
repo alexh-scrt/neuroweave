@@ -8,19 +8,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from neuroweave.graph.backends.memory import MemoryGraphStore
 from neuroweave.graph.query import QueryResult
 from neuroweave.graph.store import GraphStore, NodeType, make_edge, make_node
 from neuroweave.vector.qdrant_bridge import QdrantBridge, VectorContextResult
 
 
 @pytest.fixture
-def store() -> GraphStore:
-    s = GraphStore()
+def store() -> MemoryGraphStore:
+    s = MemoryGraphStore()
     n1 = make_node("Chromatic Polynomial", NodeType.THEOREM, node_id="n1")
     n2 = make_node("Planar Graphs", NodeType.CONCEPT, node_id="n2")
-    s.add_node(n1)
-    s.add_node(n2)
-    s.add_edge(make_edge("n1", "n2", "applies_to", 0.9, edge_id="e1"))
+    GraphStore.add_node(s, n1)
+    GraphStore.add_node(s, n2)
+    GraphStore.add_edge(s, make_edge("n1", "n2", "applies_to", 0.9, edge_id="e1"))
     return s
 
 

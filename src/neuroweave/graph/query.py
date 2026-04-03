@@ -14,9 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import networkx as nx
-
-from neuroweave.graph.store import GraphStore, NodeType
+from neuroweave.graph.store import NodeType
 from neuroweave.logging import get_logger
 
 log = get_logger("query")
@@ -74,8 +72,8 @@ class QueryResult:
         }
 
 
-def query_subgraph(
-    store: GraphStore,
+async def query_subgraph(
+    store: Any,
     *,
     entities: list[str] | None = None,
     relations: list[str] | None = None,
@@ -98,7 +96,7 @@ def query_subgraph(
     - If `min_confidence` > 0, only edges meeting the threshold are included.
 
     Args:
-        store: The graph store to query.
+        store: The graph store to query (async interface).
         entities: Entity names to start from (case-insensitive match). None = all nodes.
         relations: Relation types to include. None = all relations.
         min_confidence: Minimum edge confidence threshold (0.0 to 1.0).
@@ -114,53 +112,45 @@ def query_subgraph(
         "max_hops": max_hops,
     }
 
-    graph = store._graph  # Access the underlying NetworkX graph directly
-
     # --- Phase 1: Resolve seed nodes ---
     if entities:
-        seed_ids = _resolve_entity_names(store, entities)
+        seed_ids = await _resolve_entity_names(store, entities)
         if not seed_ids:
             log.info("query.no_seeds_found", entities=entities)
             return QueryResult(query_params=query_params)
+        resolved_nodes = []
+        for name in entities:
+            matches = await store.find_nodes(name_contains=name)
+            resolved_nodes.extend(matches)
     else:
         # No entity filter → all nodes are seeds
-        seed_ids = list(graph.nodes())
+        all_nodes = await store.find_nodes()
+        seed_ids = [n["id"] for n in all_nodes]
+        resolved_nodes = all_nodes
 
     # --- Phase 2: Hop traversal ---
     if max_hops > 0 and entities:
-        # Traverse from seeds using undirected view (follow edges both ways)
-        reachable_ids = set()
-        undirected = graph.to_undirected(as_view=True)
+        all_neighbors = []
         for sid in seed_ids:
-            if undirected.has_node(sid):
-                paths = nx.single_source_shortest_path_length(undirected, sid, cutoff=max_hops)
-                reachable_ids.update(paths.keys())
+            neighbors = await store.get_neighbors(sid, depth=max_hops)
+            all_neighbors.extend(neighbors)
+        reachable_ids = set(seed_ids) | {n["id"] for n in all_neighbors}
+        result_nodes = list({n["id"]: n for n in [*resolved_nodes, *all_neighbors]}.values())
     else:
-        # max_hops=0 or no entity filter → just the seeds
         reachable_ids = set(seed_ids)
+        result_nodes = list({n["id"]: n for n in resolved_nodes}.values())
 
-    # --- Phase 3: Collect nodes ---
-    result_nodes = []
-    for nid in reachable_ids:
-        if graph.has_node(nid):
-            result_nodes.append(store._node_to_dict(nid))
-
-    # --- Phase 4: Collect and filter edges ---
+    # --- Phase 3: Collect and filter edges ---
+    all_edges = await store.get_edges()
     result_edges = []
-    for src, tgt, key, data in graph.edges(data=True, keys=True):
-        # Both endpoints must be in the reachable set
-        if src not in reachable_ids or tgt not in reachable_ids:
+    for e in all_edges:
+        if e.get("source_id") not in reachable_ids or e.get("target_id") not in reachable_ids:
             continue
-
-        # Relation type filter
-        if relations and data.get("relation") not in relations:
+        if relations and e.get("relation") not in relations:
             continue
-
-        # Confidence filter
-        if data.get("confidence", 0.0) < min_confidence:
+        if e.get("confidence", 0.0) < min_confidence:
             continue
-
-        result_edges.append(store._edge_to_dict(src, tgt, key))
+        result_edges.append(e)
 
     log.info(
         "query.complete",
@@ -179,7 +169,7 @@ def query_subgraph(
     )
 
 
-def _resolve_entity_names(store: GraphStore, names: list[str]) -> list[str]:
+async def _resolve_entity_names(store: Any, names: list[str]) -> list[str]:
     """Resolve entity names to node IDs (case-insensitive).
 
     For each name, finds the first node whose name matches (case-insensitive).
@@ -189,7 +179,7 @@ def _resolve_entity_names(store: GraphStore, names: list[str]) -> list[str]:
     seen: set[str] = set()
 
     for name in names:
-        matches = store.find_nodes(name_contains=name)
+        matches = await store.find_nodes(name_contains=name)
         # Prefer exact case-insensitive match over substring match
         exact = [m for m in matches if m["name"].lower() == name.lower()]
         candidates = exact if exact else matches
@@ -208,8 +198,8 @@ def _resolve_entity_names(store: GraphStore, names: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def query_by_type(
-    store: GraphStore,
+async def query_by_type(
+    store: Any,
     entity_type: NodeType,
     relations: list[str] | None = None,
     max_hops: int = 1,
@@ -217,23 +207,23 @@ def query_by_type(
     """Return all nodes of the given type, optionally filtered by relation.
 
     Example:
-        query_by_type(store, NodeType.THEOREM, relations=["proves"])
+        await query_by_type(store, NodeType.THEOREM, relations=["proves"])
     """
-    nodes = store.find_nodes(node_type=entity_type)
+    nodes = await store.find_nodes(node_type=entity_type)
     if not nodes:
         return QueryResult(nodes=[], edges=[])
     node_ids = {n["id"] for n in nodes}
     all_edges = []
     for node_id in node_ids:
-        edges = store.get_edges(source_id=node_id)
+        edges = await store.get_edges(source_id=node_id)
         if relations:
             edges = [e for e in edges if e.get("relation") in relations]
         all_edges.extend(edges)
     return QueryResult(nodes=nodes, edges=all_edges)
 
 
-def get_proof_chain(
-    store: GraphStore,
+async def get_proof_chain(
+    store: Any,
     theorem_name: str,
     max_hops: int = 3,
 ) -> QueryResult:
@@ -242,12 +232,12 @@ def get_proof_chain(
     Traverses USES, FOLLOWS_FROM, and PROVES relations up to max_hops deep.
     """
     proof_relations = {"uses", "follows_from", "proves", "verified_by"}
-    nodes = store.find_nodes(name_contains=theorem_name)
+    nodes = await store.find_nodes(name_contains=theorem_name)
     if not nodes:
         return QueryResult(nodes=[], edges=[])
     root_id = nodes[0]["id"]
-    neighbors = store.get_neighbors(root_id, depth=max_hops)
-    all_edges = store.get_edges()
+    neighbors = await store.get_neighbors(root_id, depth=max_hops)
+    all_edges = await store.get_edges()
     relevant_ids = {root_id} | {n["id"] for n in neighbors}
     relevant_edges = [
         e for e in all_edges
@@ -258,23 +248,27 @@ def get_proof_chain(
     return QueryResult(nodes=[*nodes, *neighbors], edges=relevant_edges)
 
 
-def get_domain_graph(
-    store: GraphStore,
+async def get_domain_graph(
+    store: Any,
     domain_name: str,
 ) -> QueryResult:
     """Return all entities belonging to a mathematical domain."""
-    domain_nodes = store.find_nodes(node_type=NodeType.DOMAIN, name_contains=domain_name)
+    domain_nodes = await store.find_nodes(node_type=NodeType.DOMAIN, name_contains=domain_name)
     if not domain_nodes:
         return QueryResult(nodes=[], edges=[])
     domain_ids = {n["id"] for n in domain_nodes}
-    all_edges = store.get_edges()
+    all_edges = await store.get_edges()
     member_edges = [
         e for e in all_edges
         if e.get("target_id") in domain_ids and e.get("relation") == "belongs_to"
     ]
     member_ids = {e["source_id"] for e in member_edges}
-    member_nodes = [store.get_node(nid) for nid in member_ids if store.get_node(nid)]
+    member_nodes = []
+    for nid in member_ids:
+        node = await store.get_node(nid)
+        if node:
+            member_nodes.append(node)
     return QueryResult(
-        nodes=[*domain_nodes, *(n for n in member_nodes if n)],
+        nodes=[*domain_nodes, *member_nodes],
         edges=member_edges,
     )

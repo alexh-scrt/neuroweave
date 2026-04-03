@@ -45,7 +45,7 @@ async def process_message(
     This is the core loop body, factored out for testability.
     """
     result = await pipeline.extract(message)
-    stats = ingest_extraction(store, result)
+    stats = await ingest_extraction(store, result)
     return {
         "entities_extracted": len(result.entities),
         "relations_extracted": len(result.relations),
@@ -64,7 +64,7 @@ async def run_conversation_loop(
     loop = asyncio.get_event_loop()
 
     print("\n╔══════════════════════════════════════════════════════════╗")
-    print(  "║  NeuroWeave v0.1.0 — Knowledge Graph Memory POC          ║")
+    print(  "║  NeuroWeave v0.2.1 — Knowledge Graph Memory              ║")
     print(  "║  Type a message to extract knowledge.                    ║")
     print( f"║  Graph visualization: {server_url:<34s} ║")
     print(  "║  Commands: /graph  /stats  /quit                         ║")
@@ -81,7 +81,7 @@ async def run_conversation_loop(
             continue
 
         if message.startswith("/"):
-            _handle_command(message, store)
+            await _handle_command(message, store)
             continue
 
         stats = await process_message(message, pipeline, store)
@@ -98,7 +98,7 @@ async def run_conversation_loop(
         print()
 
 
-def _handle_command(command: str, store: GraphStore) -> None:
+async def _handle_command(command: str, store: GraphStore) -> None:
     """Handle slash commands in the conversation loop."""
     cmd = command.lower().strip()
 
@@ -110,7 +110,7 @@ def _handle_command(command: str, store: GraphStore) -> None:
         print(f"  Graph: {store.node_count} nodes, {store.edge_count} edges")
 
     elif cmd == "/graph":
-        data = store.to_dict()
+        data = await store.to_dict()
         if not data["nodes"]:
             print("  Graph is empty — start chatting to build it!")
         else:
@@ -119,8 +119,8 @@ def _handle_command(command: str, store: GraphStore) -> None:
                 print(f"    [{node['node_type']}] {node['name']}")
             print("  Edges:")
             for edge in data["edges"]:
-                src = store.get_node(edge["source_id"])
-                tgt = store.get_node(edge["target_id"])
+                src = await store.get_node(edge["source_id"])
+                tgt = await store.get_node(edge["target_id"])
                 src_name = src["name"] if src else edge["source_id"]
                 tgt_name = tgt["name"] if tgt else edge["target_id"]
                 print(
@@ -151,7 +151,7 @@ async def async_main() -> None:
     log = get_logger("main")
     log.info(
         "neuroweave.started",
-        version="0.1.0",
+        version="0.2.1",
         llm_provider=config.llm_provider.value,
         llm_model=config.llm_model,
         graph_backend=config.graph_backend.value,
@@ -159,7 +159,11 @@ async def async_main() -> None:
 
     llm_client = create_llm_client(config)
     pipeline = ExtractionPipeline(llm_client)
-    store = GraphStore()
+
+    # Use MemoryGraphStore for CLI (async-compatible)
+    from neuroweave.graph.backends.memory import MemoryGraphStore
+    store = MemoryGraphStore()
+    await store.initialize()
 
     # Start visualization server as a background task in the same event loop
     server_url = f"http://{config.server_host}:{config.server_port}"

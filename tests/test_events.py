@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
-import pytest
-
 from neuroweave.events import EventBus
 from neuroweave.graph.store import (
     GraphEvent,
@@ -16,7 +14,6 @@ from neuroweave.graph.store import (
     make_edge,
     make_node,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

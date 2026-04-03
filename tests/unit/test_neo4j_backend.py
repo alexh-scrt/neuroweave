@@ -91,124 +91,101 @@ def _make_neo4j_store(driver: MockDriver):  # -> Neo4jGraphStore
     store._driver = driver
     store._database = "neo4j"
     store._event_queue = None
+    store._event_bus = None
     store._lock = __import__("threading").Lock()
     store._node_count = 0
     store._edge_count = 0
     return store
 
 
-def test_neo4j_store_add_node_runs_merge_cypher():
+async def test_neo4j_store_add_node_runs_merge_cypher():
     """Neo4j add_node should run a MERGE cypher query."""
     driver = MockDriver()
     store = _make_neo4j_store(driver)
 
     node = Node(id="n1", name="Test", node_type=NodeType.ENTITY)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(store._async_add_node(node))
+    await store.add_node(node)
     assert any("MERGE" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_find_nodes_with_type_filter():
+async def test_neo4j_store_find_nodes_with_type_filter():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(
-        store._async_find_nodes(node_type="theorem", name_contains=None)
-    )
+    await store.find_nodes(node_type="theorem", name_contains=None)
     assert any("node_type" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_find_nodes_with_name_contains():
+async def test_neo4j_store_find_nodes_with_name_contains():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(
-        store._async_find_nodes(node_type=None, name_contains="euler")
-    )
+    await store.find_nodes(node_type=None, name_contains="euler")
     assert any("CONTAINS" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_add_edge_runs_merge_cypher():
+async def test_neo4j_store_add_edge_runs_merge_cypher():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
     edge = Edge(id="e1", source_id="n1", target_id="n2", relation="proves", confidence=0.9)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(store._async_add_edge(edge))
+    await store.add_edge(edge)
     assert any("MERGE" in q and "NW_EDGE" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_get_edges_with_relation_filter():
+async def test_neo4j_store_get_edges_with_relation_filter():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(
-        store._async_get_edges(source_id=None, target_id=None, relation="proves")
-    )
+    await store.get_edges(source_id=None, target_id=None, relation="proves")
     assert any("r.relation" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_get_neighbors_uses_variable_depth():
+async def test_neo4j_store_get_neighbors_uses_variable_depth():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(store._async_get_neighbors("n1", depth=3))
+    await store.get_neighbors("n1", depth=3)
     assert any("1..3" in q for q in driver._session.queries)
 
 
-def test_neo4j_store_emits_node_added_event():
+async def test_neo4j_store_emits_node_added_event():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
     q: queue.Queue[GraphEvent] = queue.Queue()
     store._event_queue = q
 
     node = Node(id="n1", name="Test", node_type=NodeType.ENTITY)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(store._async_add_node(node))
+    await store.add_node(node)
     event = q.get_nowait()
     assert event.event_type == GraphEventType.NODE_ADDED
 
 
-def test_neo4j_store_emits_edge_added_event():
+async def test_neo4j_store_emits_edge_added_event():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
     q: queue.Queue[GraphEvent] = queue.Queue()
     store._event_queue = q
 
     edge = Edge(id="e1", source_id="n1", target_id="n2", relation="proves", confidence=0.9)
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(store._async_add_edge(edge))
+    await store.add_edge(edge)
     event = q.get_nowait()
     assert event.event_type == GraphEventType.EDGE_ADDED
 
 
-def test_neo4j_store_to_dict_returns_correct_structure():
+async def test_neo4j_store_to_dict_returns_correct_structure():
     driver = MockDriver()
     store = _make_neo4j_store(driver)
-    import asyncio
-
-    result = asyncio.get_event_loop().run_until_complete(store._async_to_dict())
+    result = await store.to_dict()
     assert "nodes" in result
     assert "edges" in result
     assert "stats" in result
 
 
-def test_build_graph_store_returns_memory_for_memory_backend():
+async def test_build_graph_store_returns_memory_for_memory_backend():
     from neuroweave.api import _build_graph_store
 
     config = NeuroWeaveConfig(graph_backend=GraphBackend.MEMORY)
-    store = _build_graph_store(config)
+    store = await _build_graph_store(config)
     assert isinstance(store, MemoryGraphStore)
 
 
-def test_build_graph_store_returns_neo4j_for_neo4j_backend():
+async def test_build_graph_store_returns_neo4j_for_neo4j_backend():
     """Verify the factory dispatches to Neo4jGraphStore for neo4j backend.
 
     Since neo4j isn't installed in dev, we mock the deferred import.
@@ -233,7 +210,7 @@ def test_build_graph_store_returns_neo4j_for_neo4j_backend():
         from neuroweave.api import _build_graph_store
 
         config = NeuroWeaveConfig(graph_backend=GraphBackend.NEO4J)
-        store = _build_graph_store(config)
+        store = await _build_graph_store(config)
         assert type(store).__name__ == "Neo4jGraphStore"
     finally:
         del sys.modules["neo4j"]

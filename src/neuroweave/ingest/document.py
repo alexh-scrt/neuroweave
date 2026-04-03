@@ -73,7 +73,7 @@ class DocumentIngester:
             async with semaphore:
                 result = await self._pipeline.extract(chunk)
                 if result.entities or result.relations:
-                    stats = ingest_extraction(self._store, result)
+                    stats = await ingest_extraction(self._store, result)
                     total_entities += stats.get("nodes_added", 0)
                     total_relations += stats.get("edges_added", 0)
                 else:
@@ -91,7 +91,7 @@ class DocumentIngester:
                 node_type=NodeType.PAPER,
                 properties=metadata,
             )
-            self._store.add_node(paper_node)
+            await self._store.add_node(paper_node)
 
         return DocumentIngestionResult(
             doc_type=doc_type,

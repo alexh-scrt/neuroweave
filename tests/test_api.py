@@ -10,7 +10,6 @@ from neuroweave.api import ContextResult, EventType, NeuroWeave, ProcessResult
 from neuroweave.graph.query import QueryResult
 from neuroweave.graph.store import GraphEvent, GraphEventType
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -246,7 +245,7 @@ class TestEventSubscription:
             # Manually add a node to trigger event
             from neuroweave.graph.store import NodeType, make_node
 
-            nw.graph.add_node(make_node("Test", NodeType.ENTITY))
+            await nw.graph.add_node(make_node("Test", NodeType.ENTITY))
             await _drain()
 
             assert len(received) == 1
@@ -263,9 +262,9 @@ class TestEventSubscription:
 
             from neuroweave.graph.store import NodeType, make_edge, make_node
 
-            nw.graph.add_node(make_node("A", NodeType.ENTITY, node_id="a"))
-            nw.graph.add_node(make_node("B", NodeType.ENTITY, node_id="b"))
-            nw.graph.add_edge(make_edge("a", "b", "knows", 0.9, edge_id="e1"))
+            await nw.graph.add_node(make_node("A", NodeType.ENTITY, node_id="a"))
+            await nw.graph.add_node(make_node("B", NodeType.ENTITY, node_id="b"))
+            await nw.graph.add_edge(make_edge("a", "b", "knows", 0.9, edge_id="e1"))
             await _drain()
 
             assert len(received) == 3
@@ -281,13 +280,13 @@ class TestEventSubscription:
 
             from neuroweave.graph.store import NodeType, make_node
 
-            nw.graph.add_node(make_node("A", NodeType.ENTITY, node_id="a"))
+            await nw.graph.add_node(make_node("A", NodeType.ENTITY, node_id="a"))
             await _drain()
             assert len(received) == 1
 
             nw.unsubscribe(handler)
 
-            nw.graph.add_node(make_node("B", NodeType.ENTITY, node_id="b"))
+            await nw.graph.add_node(make_node("B", NodeType.ENTITY, node_id="b"))
             await _drain()
             assert len(received) == 1  # Still 1 — no new event
 
@@ -402,7 +401,7 @@ class TestFullIntegration:
             # Manually add nodes to ensure events fire
             from neuroweave.graph.store import NodeType, make_node
 
-            nw.graph.add_node(make_node("TestNode", NodeType.ENTITY))
+            await nw.graph.add_node(make_node("TestNode", NodeType.ENTITY))
             await _drain()
 
             assert len(events) >= 1
@@ -412,11 +411,11 @@ class TestFullIntegration:
         async with _make_nw() as nw:
             from neuroweave.graph.store import NodeType, make_edge, make_node
 
-            nw.graph.add_node(make_node("User", NodeType.ENTITY, node_id="user"))
-            nw.graph.add_node(make_node("Lena", NodeType.ENTITY, node_id="lena"))
-            nw.graph.add_node(make_node("sushi", NodeType.CONCEPT, node_id="sushi"))
-            nw.graph.add_edge(make_edge("user", "lena", "married_to", 0.9))
-            nw.graph.add_edge(make_edge("lena", "sushi", "prefers", 0.9))
+            await nw.graph.add_node(make_node("User", NodeType.ENTITY, node_id="user"))
+            await nw.graph.add_node(make_node("Lena", NodeType.ENTITY, node_id="lena"))
+            await nw.graph.add_node(make_node("sushi", NodeType.CONCEPT, node_id="sushi"))
+            await nw.graph.add_edge(make_edge("user", "lena", "married_to", 0.9))
+            await nw.graph.add_edge(make_edge("lena", "sushi", "prefers", 0.9))
 
             # Structured query
             result = await nw.query(["Lena"], relations=["prefers"], max_hops=1)

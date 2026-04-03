@@ -3,12 +3,12 @@
 import neuroweave
 from neuroweave.extraction.llm_client import MockLLMClient
 from neuroweave.extraction.pipeline import ExtractionPipeline
-from neuroweave.graph.store import GraphStore
+from neuroweave.graph.backends.memory import MemoryGraphStore
 from neuroweave.main import process_message
 
 
 def test_version():
-    assert neuroweave.__version__ == "0.2.0"
+    assert neuroweave.__version__ == "0.2.1"
 
 
 async def test_process_message_wiring():
@@ -25,7 +25,7 @@ async def test_process_message_wiring():
     })
 
     pipeline = ExtractionPipeline(mock)
-    store = GraphStore()
+    store = MemoryGraphStore()
 
     stats = await process_message("I love Python", pipeline, store)
 

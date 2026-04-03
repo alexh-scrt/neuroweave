@@ -150,7 +150,7 @@ def create_app(store: GraphStore, event_bus: EventBus | None = None) -> FastAPI:
 
     @app.get("/api/graph")
     async def get_graph():
-        return store.to_dict()
+        return await store.to_dict()
 
     @app.get("/api/health")
     async def health():
@@ -170,7 +170,7 @@ def create_app(store: GraphStore, event_bus: EventBus | None = None) -> FastAPI:
         try:
             await ws.send_text(json.dumps({
                 "type": "snapshot",
-                "data": store.to_dict(),
+                "data": await store.to_dict(),
             }))
             # Keep alive — wait for disconnect
             while True:

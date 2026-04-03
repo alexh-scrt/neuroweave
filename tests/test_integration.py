@@ -20,7 +20,6 @@ from neuroweave.extraction.pipeline import ExtractionPipeline
 from neuroweave.graph.nl_query import NLQueryPlanner
 from neuroweave.graph.store import GraphEvent, GraphEventType
 
-
 # ---------------------------------------------------------------------------
 # Corpus and mock LLM setup
 # ---------------------------------------------------------------------------
@@ -205,7 +204,7 @@ class TestGraphConstruction:
 
     async def test_specific_edges_exist(self, nw_with_corpus):
         nw = nw_with_corpus
-        edges = nw.graph.to_dict()["edges"]
+        edges = (await nw.graph.to_dict())["edges"]
         edge_set = {(e["source_id"], e["relation"], e["target_id"]) for e in edges}
 
         # Find node IDs by name
